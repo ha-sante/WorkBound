@@ -7,9 +7,6 @@
 1 to 1 Notion Mail replacement - calm email desktop client for business and professionals.
 - [Watch Walkthrough Video](https://www.youtube.com/watch?v=oKx7v0hIip4)
 
-<p align="start">
-  <img src="docs/screenshot.png" alt="WorkBound app screenshot" width="260">
-</p>
 
 ## Download & Installation
 
@@ -88,3 +85,10 @@ The app is free, however:
 - ongoing code signing, image & auth proxying and shared usage of my established google auth keys will cost.
 - If you use the default keys, you are welcome to pay the minimum $10 to support it 
 - You can access it via Developer -> Get WorkBounded.
+
+
+
+## Screenshot
+<p align="start">
+  <img src="docs/screenshot.png" alt="WorkBound app screenshot" width="460">
+</p>
