@@ -1,0 +1,1 @@
+Desktop app is built with electrobun, reactjs & sqlite + OS level bun spawns.
