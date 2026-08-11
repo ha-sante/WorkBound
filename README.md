@@ -52,7 +52,6 @@ In other to maintain practically & longevity of project - i make these descision
 3. Regular Email features
 4. ...watch the above walkthrough video.
 
-https://appbuilder24.com/verify/
 
 ## Roadmap:
 - [x] Finish the notion mail 1 to 1 baseline
