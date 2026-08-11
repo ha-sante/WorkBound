@@ -12,6 +12,7 @@
         "@ai-sdk/mistral": "^4.0.20",
         "@ai-sdk/moonshotai": "^3.0.23",
         "@ai-sdk/openai": "^4.0.27",
+        "@ai-sdk/openai-compatible": "^3.0.20",
         "@ai-sdk/xai": "^4.0.25",
         "@base-ui/react": "^1.6.0",
         "@tabler/icons-react": "^3.44.0",
