@@ -102,5 +102,5 @@ The app is free, however:
 
 ## Screenshot
 <div style="flex: 0 1 320px; text-align: right;">
-  <img src="_docs/public/screenshot.png" alt="WorkBound app screenshot" width="320" style="max-width: 100%; height: auto;">
+  <img src="docs/screenshot.png" alt="WorkBound app screenshot" width="320" style="max-width: 100%; height: auto;">
 </div>
