@@ -97,6 +97,7 @@ export function InterfacePanel() {
           <option value="textAndIcon">Text + Icon</option>
         </Select>
       </div>
+
     </div>
   );
 }

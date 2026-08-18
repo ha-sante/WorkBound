@@ -4,6 +4,7 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import type { InferSelectModel, SQL } from "drizzle-orm";
 
 export type OutboxRow = InferSelectModel<typeof outbox>;
+const PROCESSOR_ID = `processor-${crypto.randomUUID()}`;
 
 export function insert_outbox(data: typeof outbox.$inferInsert) {
   getDb().insert(outbox).values(data).run();
@@ -37,7 +38,7 @@ export function list_outbox_filtered(opts: { thread_id?: string; status?: string
 export function clear_scheduled_at(id: string) {
   getDb()
     .update(outbox)
-    .set({ scheduled_at: null, status: "queued", error: null })
+    .set({ scheduled_at: null, available_at: Date.now(), status: "queued", error: null, next_retry_at: null })
     .where(eq(outbox.id, id))
     .run();
 }
@@ -55,22 +56,56 @@ export function update_outbox_status(
   status: string,
   error?: string,
 ) {
-  const update: Partial<Pick<OutboxRow, "status" | "error" | "sent_at">> = {
+  const update: Partial<Pick<OutboxRow, "status" | "error" | "sent_at" | "locked_at" | "locked_by">> = {
     status,
     ...(error !== undefined ? { error } : {}),
     ...(status === "sent" ? { sent_at: Date.now() } : {}),
+    ...(status !== "sending" ? { locked_at: null, locked_by: null } : {}),
   };
   getDb().update(outbox).set(update).where(eq(outbox.id, id)).run();
 }
 
-export function pick_queued_outbox(): OutboxRow[] {
-  return getDb()
+export function claim_queued_outbox(limit = 5): OutboxRow[] {
+  const now = Date.now();
+  const candidates = getDb()
     .select()
     .from(outbox)
-    .where(sql`${outbox.status} = 'queued' AND (${outbox.scheduled_at} IS NULL OR ${outbox.scheduled_at} <= ${Date.now()})`)
-    .orderBy(sql`created_at ASC`)
-    .limit(5)
+    .where(sql`${outbox.status} = 'queued'
+      AND COALESCE(${outbox.available_at}, ${outbox.scheduled_at}, ${outbox.created_at}) <= ${now}
+      AND (${outbox.next_retry_at} IS NULL OR ${outbox.next_retry_at} <= ${now})`)
+    .orderBy(sql`COALESCE(available_at, scheduled_at, created_at) ASC, created_at ASC`)
+    .limit(limit)
     .all();
+
+  const claimed: OutboxRow[] = [];
+  for (const candidate of candidates) {
+    const result = getDb()
+      .update(outbox)
+      .set({ status: "sending", locked_at: now, locked_by: PROCESSOR_ID, attempt_count: sql`${outbox.attempt_count} + 1` })
+      .where(and(eq(outbox.id, candidate.id), eq(outbox.status, "queued")))
+      .run();
+    if (result.changes > 0) {
+      claimed.push({ ...candidate, status: "sending", locked_at: now, locked_by: PROCESSOR_ID, attempt_count: candidate.attempt_count + 1 });
+    }
+  }
+  return claimed;
+}
+
+export function requeue_stale_outbox(lease_ms: number) {
+  const cutoff = Date.now() - lease_ms;
+  getDb()
+    .update(outbox)
+    .set({ status: "queued", locked_at: null, locked_by: null, available_at: sql`COALESCE(${outbox.scheduled_at}, ${Date.now()})` })
+    .where(sql`${outbox.status} = 'sending' AND ${outbox.locked_at} IS NOT NULL AND ${outbox.locked_at} < ${cutoff}`)
+    .run();
+}
+
+export function update_outbox_retry(id: string, error: string, next_retry_at: number) {
+  getDb()
+    .update(outbox)
+    .set({ status: "queued", error, next_retry_at, locked_at: null, locked_by: null })
+    .where(eq(outbox.id, id))
+    .run();
 }
 
 export function delete_outbox(id: string) {

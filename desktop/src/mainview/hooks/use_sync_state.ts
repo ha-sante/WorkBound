@@ -1,12 +1,12 @@
 import { useEffect, useReducer, useCallback, useRef } from "react";
 import { useSetAtom, useAtomValue } from "jotai";
-import { initialSyncState, sync_reducer } from "./sync_state";
+import { initialSyncState, sync_reducer } from "./utils/sync_state";
 import { emailsByFolderAtom } from "../state";
-import { fetch_all_local_emails, group_emails_by_folder, merge_emails, get_bounds } from "./email_utils";
+import { load_all_email_previews, group_emails_by_folder, merge_emails_by_folder, get_email_date_bounds } from "./utils/email_utils";
 import { messages } from "@/shared/rpc_messages";
 import { rpc } from "../rpc";
 
-export type { SyncEngineState } from "./sync_state";
+export type { SyncEngineState } from "./utils/sync_state";
 
 export function useSyncState(account_id?: string) {
   const [state, dispatch] = useReducer(sync_reducer, initialSyncState);
@@ -22,7 +22,7 @@ export function useSyncState(account_id?: string) {
   // Sync bounds from atom once it's populated (after initial load in useStartup)
   useEffect(() => {
     if (boundsSetRef.current) return;
-    const b = get_bounds(folderEmails);
+    const b = get_email_date_bounds(folderEmails);
     if (b.newest || b.oldest) {
       newestRef.current = b.newest;
       oldestRef.current = b.oldest;
@@ -51,10 +51,10 @@ export function useSyncState(account_id?: string) {
 
   const reload_email_list = useCallback(() => {
     if (!account_id) return;
-    fetch_all_local_emails(account_id).then((result) => {
+    load_all_email_previews(account_id).then((result) => {
       const grouped = group_emails_by_folder(result || []);
       setEmailsByFolder(grouped);
-      const b = get_bounds(grouped);
+      const b = get_email_date_bounds(grouped);
       newestRef.current = b.newest;
       oldestRef.current = b.oldest;
       boundsSetRef.current = true;
@@ -67,7 +67,7 @@ export function useSyncState(account_id?: string) {
     if (!account_id || !newestRef.current) { reload_email_list(); return; }
     rpc.request(messages.mail_list_up, { account_id, since: newestRef.current }).then((newEmails: EmailPreviewWire[]) => {
       if (!newEmails?.length) return;
-      setEmailsByFolder((prev) => merge_emails(prev, newEmails));
+      setEmailsByFolder((prev) => merge_emails_by_folder(prev, newEmails));
       let n = newestRef.current;
       for (const e of newEmails) {
         if (e.received_at && (!n || e.received_at > n)) n = e.received_at;
@@ -82,7 +82,7 @@ export function useSyncState(account_id?: string) {
     if (!account_id || !oldestRef.current) { reload_email_list(); return; }
     rpc.request(messages.mail_list_down, { account_id, before: oldestRef.current }).then((oldEmails: EmailPreviewWire[]) => {
       if (!oldEmails?.length) return;
-      setEmailsByFolder((prev) => merge_emails(prev, oldEmails));
+      setEmailsByFolder((prev) => merge_emails_by_folder(prev, oldEmails));
       let o = oldestRef.current;
       for (const e of oldEmails) {
         if (e.received_at && (!o || e.received_at < o)) o = e.received_at;

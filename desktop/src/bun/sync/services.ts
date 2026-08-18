@@ -8,6 +8,7 @@ import { sync_past_email_attachments } from "./mail_attachments_sync";
 import { list_accounts } from "../db/accounts";
 import { logger } from "../utils/logger";
 import { clear_all_retries } from "../utils/retry";
+import { start_reminder_worker, stop_reminder_worker } from "./mail_reminders_worker";
 
 let started = false;
 
@@ -30,6 +31,7 @@ export function start_all_services() {
   start_cache_eviction();
   start_auto_label_job_runner();
   start_contacts_photo_sync();
+  start_reminder_worker();
 
   const accounts = list_accounts();
   for (const a of accounts) {
@@ -47,6 +49,7 @@ export function stop_all_services() {
   stop_cache_eviction();
   stop_auto_label_job_runner();
   stop_contacts_photo_sync();
+  stop_reminder_worker();
 
   const accounts = list_accounts();
   for (const a of accounts) {

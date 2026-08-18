@@ -16,3 +16,4 @@ export { email_templates } from "./email_templates";
 export { auto_label_jobs } from "./auto_label_jobs";
 export { auto_label_assignments } from "./auto_label_assignments";
 export { images } from "./images";
+export { notification_filters } from "./notification_filters";

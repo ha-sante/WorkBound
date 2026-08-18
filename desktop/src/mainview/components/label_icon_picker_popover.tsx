@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { ExternalLink, X, icons as lucide_icons } from "lucide-react";
+import { ExternalLink as ExternalLinkIcon, X, icons as lucide_icons } from "lucide-react";
+import { ExternalLink } from "./ui/external_link";
 
 const lucide_icon_names = Object.keys(lucide_icons);
 
@@ -33,21 +34,17 @@ export function LabelIconPickerPopover({
           placeholder="Search lucide icons..."
           className="flex-1 px-3 py-1.5 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
-        <a
+        <ExternalLink
           href="https://lucide.dev/icons/"
-          target="_blank"
-          rel="noreferrer"
-          className="px-2 py-1.5 text-xs border border-border-subtle rounded hover:bg-black/[0.04] cursor-pointer flex items-center gap-1 text-text-secondary shrink-0"
-        >
-          <ExternalLink size={14} />
+          className="px-2 py-1.5 text-xs border border-border-subtle rounded hover:bg-black/[0.04] cursor-pointer flex items-center gap-1 text-text-secondary shrink-0">
+          <ExternalLinkIcon size={14} />
           Browse
-        </a>
+        </ExternalLink>
         <button
           type="button"
           onClick={() => on_open_change(false)}
           className="p-1.5 rounded hover:bg-black/[0.04] cursor-pointer shrink-0"
-          aria-label="Close"
-        >
+          aria-label="Close">
           <X size={16} className="text-text-secondary" />
         </button>
       </div>
@@ -62,8 +59,7 @@ export function LabelIconPickerPopover({
             on_open_change(false);
             on_icon_search_change("");
           }}
-          className="px-2 py-1.5 text-xs rounded border cursor-pointer shrink-0 border-border-subtle hover:bg-black/[0.04]"
-        >
+          className="px-2 py-1.5 text-xs rounded border cursor-pointer shrink-0 border-border-subtle hover:bg-black/[0.04]">
           None
         </button>
         <div className="text-xs text-text-secondary">

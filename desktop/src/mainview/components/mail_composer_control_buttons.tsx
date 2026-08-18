@@ -1,6 +1,6 @@
 import { Undo, Redo, Trash2, Save, Check } from "lucide-react";
 import { useAtomValue } from "jotai";
-import { composeDiscardAtom, composeSaveAtom, currentMailComposeAtom } from "../state";
+import { composeDiscardAtom, composeSaveAtom, composeMetaAtom } from "../state";
 
 type Props = {
   canUndo: boolean;
@@ -14,7 +14,7 @@ const btnClass = "w-9 h-9 flex items-center justify-center rounded-lg text-white
 function MailComposerControlButtons({ canUndo, canRedo, onUndo, onRedo }: Props) {
   const { fn: onDiscard } = useAtomValue(composeDiscardAtom);
   const { status: saveStatus, fn: onSave } = useAtomValue(composeSaveAtom);
-  const phase = useAtomValue(currentMailComposeAtom).phase;
+  const phase = useAtomValue(composeMetaAtom).phase;
   const inactive = phase === "sending" || phase === "sent";
   return (
     <div className="absolute -right-12 top-24 -translate-y-1/2 flex flex-col gap-3">

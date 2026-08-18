@@ -68,6 +68,9 @@ export const messages = {
   clipboard_write:            "clipboard:write",
   url_open:                   "url:open",
 
+  // global keyboard shortcuts
+  shortcuts_open_accessibility_settings: "shortcuts:open_accessibility_settings",
+
   // send-as aliases
   send_as_list:               "sendAs:list",
   send_as_sync:               "sendAs:sync",
@@ -124,6 +127,17 @@ export const messages = {
   filtered_views_save:        "filtered_views:save",
   filtered_views_delete:      "filtered_views:delete",
   filtered_views_replace:     "filtered_views:replace",
+
+  // notification filters
+  notification_filters_list:    "notification_filters:list",
+  notification_filters_replace: "notification_filters:replace",
+
+  // reminders
+  reminders_list:                 "reminders:list",
+  reminders_create:               "reminders:create",
+  reminders_update:               "reminders:update",
+  reminders_delete:               "reminders:delete",
+  reminders_changed:              "reminders:changed",
 
   // email templates
   templates_list:             "templates:list",
@@ -215,7 +229,9 @@ export type BunMessageMap = {
   "context_menu:action":    ContextMenuActionWire;
   "notification:email":     NotificationEmailWire;
   "outbox:changed":         OutboxChangedWire;
+  "reminders:changed":      { account_id: string };
   "updates:status":         UpdateStatusEntryWire;
+  "draft:externally_modified": { id: string };
   "intelligence:auto_label_job_progress": AutoLabelJobWire;
   "intelligence:auto_label_job_done":     AutoLabelJobWire;
   "intelligence:auto_label_job_error":    AutoLabelJobWire;

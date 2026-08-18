@@ -98,6 +98,22 @@ export interface WorkBoundRPCSchema extends ElectrobunRPCSchema {
         };
         response: EmailPreviewWire[];
       };
+      "reminders:list": {
+        params: AccountScope;
+        response: ReminderWire[];
+      };
+      "reminders:create": {
+        params: { account_id: string; email_id: string; thread_id?: string | null; remind_at: number };
+        response: ReminderWire;
+      };
+      "reminders:update": {
+        params: { id: string; account_id?: string; remind_at?: number; status?: "pending" | "completed" | "dismissed" };
+        response: SuccessWire;
+      };
+      "reminders:delete": {
+        params: EntityId & { account_id?: string };
+        response: SuccessWire;
+      };
       "thread:get": {
         params: EntityId;
         response: ThreadRowWire | null;
@@ -218,8 +234,8 @@ export interface WorkBoundRPCSchema extends ElectrobunRPCSchema {
         response: EntityId;
       };
       "outbox:cancel": {
-        params: EntityId;
-        response: SuccessWire;
+        params: EntityId & { source?: "undo" | "edit" };
+        response: { success: boolean; draft_id: string | null };
       };
       "outbox:delete": {
         params: EntityId;
@@ -304,6 +320,10 @@ export interface WorkBoundRPCSchema extends ElectrobunRPCSchema {
         params: { url: string };
         response: SuccessWire;
       };
+      "shortcuts:open_accessibility_settings": {
+        params: void;
+        response: SuccessWire;
+      };
       toggleZoom: {
         params: void;
         response: SuccessWire;
@@ -380,11 +400,11 @@ export interface WorkBoundRPCSchema extends ElectrobunRPCSchema {
         response: SignatureTemplateWire[];
       };
       "signature:create": {
-        params: { account_id: string; name: string; content: string };
+        params: { account_id: string; name: string; body: string };
         response: SignatureTemplateWire;
       };
       "signature:update": {
-        params: { id: string; name: string; content: string };
+        params: { id: string; name: string; body: string };
         response: SuccessWire;
       };
       "signature:delete": {
@@ -425,6 +445,14 @@ export interface WorkBoundRPCSchema extends ElectrobunRPCSchema {
       };
       "filtered_views:replace": {
         params: { account_id: string; views: FilteredViewWire[] };
+        response: SuccessWire;
+      };
+      "notification_filters:list": {
+        params: AccountScope;
+        response: NotificationFilterWire[];
+      };
+      "notification_filters:replace": {
+        params: { account_id: string; filters: NotificationFilterWire[] };
         response: SuccessWire;
       };
       "templates:list": {
@@ -667,9 +695,11 @@ export interface WorkBoundRPCSchema extends ElectrobunRPCSchema {
       "auth:reconnect_complete": AuthReconnectCompleteWire;
       "draft:email_saved": DraftEmailSavedWire;
       "draft:email_sent": DraftEmailSentWire;
+      "draft:externally_modified": { id: string };
       "email:command": EmailCommandWire;
       "notification:email": NotificationEmailWire;
       "outbox:changed": OutboxChangedWire;
+      "reminders:changed": { account_id: string };
       "labels:changed": AccountScope;
       "contacts:changed": AccountScope;
       "updates:status": UpdateStatusEntryWire;

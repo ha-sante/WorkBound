@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { messages } from "@/shared/rpc_messages";
 import { useAlertToast } from "../hooks/use_alert_toast";
 import { type MenuItem } from "../components/mail_viewer_control_buttons";
-import { MailCheck, Flag, Archive, ShieldAlert, ShieldOff, UserX, Download, Trash2, Inbox, RotateCcw } from "lucide-react";
+import { MailCheck, Flag, Archive, ShieldAlert, ShieldOff, UserX, Download, Trash2, RotateCcw } from "lucide-react";
 import { rpc } from "../rpc";
-import { enqueue_email_action } from "./email_actions";
+import { enqueue_email_action } from "./utils/email_actions";
 
 const folderMenus: Record<string, MenuItem[]> = {
   inbox: [
@@ -38,7 +38,7 @@ const folderMenus: Record<string, MenuItem[]> = {
     { type: "action", label: "", Icon: MailCheck, action: "toggle-read" },
     { type: "action", label: "", Icon: Flag, action: "toggle-important" },
     { type: "separator" },
-    { type: "action", label: "Mark Not Spam", Icon: Inbox, action: "not-spam" },
+    { type: "action", label: "Mark Not Spam", Icon: RotateCcw, action: "not-spam" },
     { type: "separator" },
     { type: "action", label: "Download Message", Icon: Download, action: "download" },
     { type: "separator" },

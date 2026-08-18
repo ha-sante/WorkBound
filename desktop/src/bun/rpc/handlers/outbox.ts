@@ -3,11 +3,10 @@ import { outbox_commands } from "../../../shared/outbox_commands";
 import { logger } from "../../utils/logger";
 import { insert_outbox, cancel_outbox, delete_outbox, get_outbox, list_outbox_filtered, clear_scheduled_at, type OutboxRow } from "../../db/outbox";
 import { get_email, update_email } from "../../db/emails";
-import { save_draft, delete_draft } from "../../db/drafts";
+import { save_draft, delete_draft, get_draft } from "../../db/drafts";
 import { bulk_insert_attachments } from "../../db/attachments";
 import { get_account } from "../../db/accounts";
 import { get_adapter } from "../../providers";
-import { process_single_item } from "../../outbox/processor";
 import { get_rpc } from "../../outbox/rpc_ref";
 
 type SendMeta = { to: string; subject: string | null; thread_id: string | null };
@@ -105,13 +104,29 @@ async function cancel_captured_gmail_schedule(row: OutboxRow): Promise<void> {
   logger.info("rpc", `outbox:cancel id=${row.id} captured gmail send, unscheduling server draft=${gmail_draft_id ?? "none"}`);
 }
 
-function convert_to_local_draft(row: OutboxRow): string | null {
+function convert_to_local_draft(row: OutboxRow, body_source: "raw" | "fullHtml" = "fullHtml"): string | null {
   const p = try_parse_json(row.payload);
   const to = typeof p.to === "string" ? p.to.trim() : "";
   if (!to) return null;
 
   const draft_id = typeof p.draft_id === "string" && p.draft_id ? p.draft_id : crypto.randomUUID();
   const mode: DraftMode = p.original_email_id ? "reply" : "new";
+
+  const extras = try_parse_json(row.extras);
+  const use_raw = body_source === "raw" && typeof extras.raw_body_html === "string" && extras.raw_body_html;
+  const body_html = use_raw ? extras.raw_body_html : (p.body_html ?? null);
+  const body_text = use_raw ? (extras.raw_body_text ?? null) : (p.body_text ?? null);
+  const quote_text = use_raw ? (extras.quote_text ?? null) : (p.quote_text ?? null);
+
+  // BUG-2 diagnostic: confirm whether scheduled-edit payloads arrive with an empty body
+  if (body_source === "fullHtml" && !body_html) {
+    console.warn("[outbox:convert] fullHtml source has empty body_html", {
+      command: row.command,
+      payload_keys: Object.keys(p),
+      has_raw: !!extras.raw_body_html,
+      body_html_len: typeof p.body_html === "string" ? p.body_html.length : null,
+    });
+  }
 
   save_draft({
     id: draft_id,
@@ -121,13 +136,13 @@ function convert_to_local_draft(row: OutboxRow): string | null {
     cc: p.cc ?? null,
     bcc: p.bcc ?? null,
     subject: p.subject ?? null,
-    body_html: p.body_html ?? null,
-    body_text: p.body_text ?? null,
-    snippet: (typeof p.body_text === "string" ? p.body_text : "").slice(0, 100),
+    body_html,
+    body_text,
+    snippet: (typeof body_text === "string" ? body_text : "").slice(0, 100),
     from_address: p.from_address ?? null,
     from_name: p.from_name ?? null,
     original_email_id: p.original_email_id ?? null,
-    quote_text: p.quote_text ?? null,
+    quote_text,
     local_draft_id: draft_id,
     force: true,
   });
@@ -163,6 +178,11 @@ function to_wire(r: {
   created_at: number;
   sent_at: number | null;
   scheduled_at: number | null;
+  available_at: number | null;
+  attempt_count: number;
+  next_retry_at: number | null;
+  locked_at: number | null;
+  locked_by: string | null;
 }) {
   return {
     id: r.id,
@@ -178,6 +198,11 @@ function to_wire(r: {
     created_at: r.created_at,
     sent_at: r.sent_at,
     scheduled_at: r.scheduled_at,
+    available_at: r.available_at,
+    attempt_count: r.attempt_count,
+    next_retry_at: r.next_retry_at,
+    locked_at: r.locked_at,
+    locked_by: r.locked_by,
   };
 }
 
@@ -247,6 +272,12 @@ export default {
     if (meta.to) to_addr = meta.to;
     if (meta.subject) subject = meta.subject;
     thread_id = meta.thread_id;
+    const now = Date.now();
+    const parsed_extras = try_parse_json(extras);
+    const undo_seconds = command === outbox_commands.send_email && !params.scheduled_at && parsed_extras.undo_enabled
+      ? Math.max(0, Number(parsed_extras.undo_seconds) || 0)
+      : 0;
+    const available_at = params.scheduled_at ?? now + undo_seconds * 1000;
 
     logger.info("rpc", `outbox:enqueue id=${id} command=${command}`);
 
@@ -260,8 +291,10 @@ export default {
       subject,
       thread_id,
       status: "queued",
-      created_at: Date.now(),
+      created_at: now,
       scheduled_at: params.scheduled_at ?? null,
+      available_at,
+      attempt_count: 0,
     });
     emit_outbox_changed(params.account_id, thread_id);
 
@@ -300,47 +333,39 @@ export default {
       }
     }
 
-    if (command !== outbox_commands.draft_send && command !== outbox_commands.send_email && !params.scheduled_at) {
-      (async () => {
-        try {
-          await process_single_item({ id, account_id: params.account_id, command, payload, extras, to_addr, subject, thread_id, created_at: Date.now(), scheduled_at: null });
-          delete_outbox(id);
-          emit_outbox_changed(params.account_id, thread_id);
-        } catch (e) {
-          const msg = (e as Error).message || "";
-          const isNetwork = e instanceof TypeError || msg.includes("fetch failed");
-          if (isNetwork) {
-            logger.warn("rpc", `outbox:enqueue: network error for ${id}, leaving for processor retry`);
-          } else {
-            logger.error("rpc", `outbox:enqueue: permanent error for ${id}:`, e);
-            delete_outbox(id);
-            emit_outbox_changed(params.account_id, thread_id);
-          }
-        }
-      })();
-    }
-
     return { id };
   },
 
-  [messages.outbox_cancel]: async (params: EntityId) => {
-    logger.info("rpc", `outbox:cancel id=${params.id}`);
+  [messages.outbox_cancel]: async (params: { id: string; source?: "undo" | "edit" }) => {
+    logger.info("rpc", `outbox:cancel id=${params.id} source=${params.source ?? "undo"}`);
     const row = get_outbox(params.id);
+    let draft_id: string | null = null;
     if (row) {
-      const isScheduled = row.command === outbox_commands.send_email && !!row.scheduled_at && row.status === "queued";
-      if (isScheduled) {
-        if (is_captured_gmail_row(row)) {
+      const isQueuedSend = row.command === outbox_commands.send_email && row.status === "queued";
+      if (isQueuedSend) {
+        const isScheduled = !!row.scheduled_at;
+        if (isScheduled && is_captured_gmail_row(row)) {
           await cancel_captured_gmail_schedule(row);
-        } else {
-          const draft_id = convert_to_local_draft(row);
-          logger.info("rpc", `outbox:cancel id=${row.id} converted scheduled send to draft=${draft_id ?? "none"}`);
+        } else if (!is_captured_gmail_row(row)) {
+          const p = try_parse_json(row.payload);
+          const existing = typeof p.draft_id === "string" && p.draft_id ? get_draft(p.draft_id) : null;
+          if (existing) {
+            // P1 — leave the raw (pill-baked) draft untouched, reopen it as-is
+            draft_id = existing.id;
+            logger.info("rpc", `outbox:cancel id=${row.id} keeping existing draft=${draft_id}`);
+          } else {
+            // P2 — recover: scheduled-edit uses fullHtml (quote as content), undo uses raw snapshot (pill restored)
+            const source = params.source ?? "undo";
+            draft_id = convert_to_local_draft(row, source === "edit" ? "fullHtml" : "raw");
+            logger.info("rpc", `outbox:cancel id=${row.id} converted send to draft=${draft_id ?? "none"} (source=${source})`);
+          }
           if (draft_id) emit_draft_refresh(row.account_id);
         }
       }
       cancel_outbox(params.id);
       emit_outbox_changed(row.account_id, row.thread_id);
     }
-    return { success: true };
+    return { success: true, draft_id };
   },
 
   [messages.outbox_delete]: async (params: EntityId) => {

@@ -1,6 +1,7 @@
 import { gmail_fetch, parse_message_full, parse_message_metadata, SyncResetError, InvalidHistoryIdError, GmailAuthError, chunkArray, sleep, send_batch_with_retry } from "./utils";
 export { SyncResetError, InvalidHistoryIdError, GmailAuthError, parse_message_full };
 import { logger } from "../../utils/logger";
+import { html_decode_url } from "../../utils/html";
 import { error_message } from "../../../shared/errors";
 import { Tel } from "../../utils/tel";
 import type { EmailInput } from "../../db/emails";
@@ -413,7 +414,7 @@ export function resolve_external_image_urls(body_html: string, proxy_base: strin
   const to_proxy = (url: string): string => {
     if (!/^https?:\/\//i.test(url)) return url;
     if (url.startsWith(proxy_base) || /\/image_proxy\?/i.test(url)) return url;
-    return `${proxy_base}/image_proxy?url=${encodeURIComponent(url)}&k=${encodeURIComponent(proxy_key)}`;
+    return `${proxy_base}/image_proxy?url=${encodeURIComponent(html_decode_url(url))}&k=${encodeURIComponent(proxy_key)}`;
   };
 
   const rewrite_srcset = (value: string): string =>

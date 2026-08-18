@@ -5,9 +5,9 @@ import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Quote, Inden
 import type { LucideIcon } from "lucide-react";
 import { IconWritingSign } from "@tabler/icons-react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { build_pill_html } from "../../../utils/pill";
+import { build_pill_html } from "../../../utils/quote";
 import { INLINE_STYLES, apply_inline_styles, add_inline_styles_to_html } from "../../../utils/email_html";
-import { composeMailBodyAtom, composeCanUndoAtom, composeCanRedoAtom, composeUndoAtom, composeRedoAtom, signature_templatesAtom, email_templatesAtom } from "../../../state";
+import { composeBodyAtom, composeCanUndoAtom, composeCanRedoAtom, composeUndoAtom, composeRedoAtom, signature_templatesAtom, email_templatesAtom } from "../../../state";
 
 const HISTORY_DEBOUNCE_MS = 400;
 
@@ -621,7 +621,7 @@ function MdexToolbar({ editorRef, editorEl, onInsertImage, expandedImage, onExpa
   const slashFileInputRef = useRef<HTMLInputElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
 
-  const body = useAtomValue(composeMailBodyAtom);
+  const body = useAtomValue(composeBodyAtom);
   const signature_templates = useAtomValue(signature_templatesAtom);
   const email_templates = useAtomValue(email_templatesAtom);
 

@@ -10,7 +10,7 @@ type Props = {
   backfill: BackfillSyncState;
 };
 
-function SyncProgressView({ backfill }: Props) {
+function SyncProgress({ backfill }: Props) {
   if (backfill.status !== "syncing" && backfill.status !== "done") return null;
 
   const [dots, setDots] = useState("");
@@ -47,4 +47,4 @@ function SyncProgressView({ backfill }: Props) {
   );
 }
 
-export default SyncProgressView;
+export default SyncProgress;

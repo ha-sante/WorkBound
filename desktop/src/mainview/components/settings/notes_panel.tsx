@@ -140,7 +140,7 @@ export function NotesPanel({ account_id }: { account_id: string }) {
                 </button>
                 {isOpen && (
                   <div className="pb-3">
-                    <p className="text-sm text-text-primary whitespace-pre-wrap">{n.content}</p>
+                    <p className="text-sm text-text-primary whitespace-pre-wrap break-all">{n.content}</p>
                   </div>
                 )}
               </div>

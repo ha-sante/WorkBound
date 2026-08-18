@@ -34,6 +34,20 @@ declare global {
     error?: string;
   };
 
+  type ReminderWire = {
+    id: string;
+    account_id: string;
+    email_id: string;
+    thread_id: string | null;
+    remind_at: number;
+    status: "pending" | "completed" | "dismissed";
+    created_at: number;
+    subject?: string | null;
+    from_name?: string | null;
+    from_address?: string | null;
+    snippet?: string | null;
+  };
+
   type StartedWire = {
     started: boolean;
   };
@@ -55,7 +69,7 @@ declare global {
 
   type DraftMode = "new" | "reply" | "reply_all" | "forward";
 
-  type MailComposeState = {
+  type ComposeMeta = {
     mode: DraftMode;
     email: EmailPreviewWire | null;
     fullEmail: EmailRowWire | null;
@@ -255,13 +269,40 @@ declare global {
     avatar_url?: string | null;
   };
 
+  type ScheduledListRow = {
+    kind: "scheduled";
+    id: string;
+    account_id: string;
+    name: string;
+    subject: string;
+    snippet: string;
+    time_label: string;
+    status?: "queued" | "sending" | "failed";
+    item: OutboxItemWire;
+  };
+
+  type ReminderListRow = {
+    kind: "reminder";
+    id: string;
+    folder: string;
+    account_id: string;
+    name: string;
+    subject: string;
+    snippet: string;
+    time_label: string;
+    reminder: ReminderWire;
+  };
+
+  type MailListRow = EmailPreviewWire | ScheduledListRow | ReminderListRow;
+
   type ClientFilterClause = {
     id: string;
     // What to match against
     field:
-      | "category"
-      | "label"
-      | "is_unread"
+       | "category"
+       | "label"
+       | "is_important"
+       | "is_unread"
       | "has_attachments"
       | "from"
       | "to"
@@ -295,6 +336,15 @@ declare global {
     clauses: ClientFilterClause[];
     folder: string;
     visible: boolean;
+    position: number;
+  };
+
+  type NotificationFilterWire = {
+    id: string;
+    name: string;
+    icon_name: string;
+    clauses: ClientFilterClause[];
+    enabled: boolean;
     position: number;
   };
 
@@ -478,6 +528,11 @@ declare global {
     thread_id: string;
   };
 
+  type SendTiming = {
+    undo_enabled: boolean;
+    undo_seconds: number;
+  };
+
   type OutboxItemWire = {
     id: string;
     account_id: string;
@@ -492,6 +547,11 @@ declare global {
     created_at: number;
     sent_at: number | null;
     scheduled_at: number | null;
+    available_at: number | null;
+    attempt_count: number;
+    next_retry_at: number | null;
+    locked_at: number | null;
+    locked_by: string | null;
   };
 
   type OutboxChangedWire = {
@@ -690,9 +750,24 @@ declare global {
   type SendResult =
     { ok: true; outboxId: string } | { ok: false; error: string };
 
-  type ComposeMailBody = {
+  type ComposeBody = {
     body_html: string;
     body_text: string;
+  };
+
+  type SentToastState = {
+    status: "pending" | "sent" | "failed";
+    outbox_id: string | null;
+    error?: string;
+    undo_enabled: boolean;
+    is_draft: boolean;
+    mode: DraftMode;
+    countdown_total: number;
+  };
+
+  type ComposePreviousState = {
+    meta: ComposeMeta;
+    body: ComposeBody;
   };
 
   type UseDraftEmailParams = {
@@ -704,7 +779,7 @@ declare global {
     editorRef: React.RefObject<HTMLDivElement | null>;
     setComposeState: (
       updater:
-        MailComposeState | ((prev: MailComposeState) => MailComposeState),
+        ComposeMeta | ((prev: ComposeMeta) => ComposeMeta),
     ) => void;
     onClose: () => void;
   };

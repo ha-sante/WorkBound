@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
-import { Inbox, Send, Trash2, ChevronRight, ChevronLeft, GlobeX, ListFilter, CalendarClock, Loader2, RefreshCw, icons as lucide_icons } from "lucide-react";
+import { Inbox, Send, Trash2, ChevronRight, ChevronLeft, GlobeX, ListFilter, CalendarClock, Bell, Loader2, RefreshCw, icons as lucide_icons } from "lucide-react";
 import { Setting2 } from "iconsax-reactjs";
 import { IconWritingSign, IconInfoSquareRounded } from '@tabler/icons-react';
 import { messages } from "@/shared/rpc_messages";
-import { sidebarWidthAtom, sidebarOpenAtom, hydrate_sidebar_state } from "../atoms/sidebar";
+import { sidebarWidthAtom, sidebarOpenAtom, hydrate_sidebar_state } from "../state";
 import { Tooltip } from "./ui/tooltip";
 import { rpc } from "../rpc";
 import { filtered_views_enabled_atom, filtered_views_atom_for } from "../state";
-import { percent_progress } from "../utils/percent";
-import type { SyncEngineState } from "../hooks/sync_state";
+import { percent_progress } from "../utils/format_number";
+import type { SyncEngineState } from "../hooks/utils/sync_state";
 import Avatar from "./avatar";
 import AvatarImage from "./avatar_image";
 
@@ -34,10 +34,12 @@ type Props = {
   active_view_id: string | null;
   onViewSelect: (view_id: string) => void;
   scheduled_count: number;
+  reminders_count: number;
+  due_reminders_count: number;
   backfill: SyncEngineState["backfill"];
 };
 
-function Sidebar({ user, onOpenSettings, onOpenProfile, onOpenDeveloper, onRetryBackfill, currentFolder, onFolderChange, active_view_id, onViewSelect, scheduled_count, backfill }: Props) {
+function Sidebar({ user, onOpenSettings, onOpenProfile, onOpenDeveloper, onRetryBackfill, currentFolder, onFolderChange, active_view_id, onViewSelect, scheduled_count, reminders_count, due_reminders_count, backfill }: Props) {
   const [width, setWidth] = useAtom(sidebarWidthAtom);
   const [isOpen, setIsOpen] = useAtom(sidebarOpenAtom);
   const [dragCompact, setDragCompact] = useState<boolean | undefined>(undefined);
@@ -56,13 +58,16 @@ function Sidebar({ user, onOpenSettings, onOpenProfile, onOpenDeveloper, onRetry
     [views],
   );
 
-  const mail_items = useMemo(() => {
-    const items = [...mailItems];
+  const dynamic_mail_items = useMemo(() => {
+    const items: { label: string; folder: string; icon: typeof CalendarClock; count?: number; due?: boolean }[] = [];
     if (scheduled_count > 0) {
-      items.splice(3, 0, { label: "Scheduled", folder: "scheduled", icon: CalendarClock });
+      items.push({ label: "Scheduled", folder: "scheduled", icon: CalendarClock });
+    }
+    if (reminders_count > 0) {
+      items.push({ label: "Reminders", folder: "reminders", icon: Bell, count: due_reminders_count, due: due_reminders_count > 0 });
     }
     return items;
-  }, [scheduled_count]);
+  }, [scheduled_count, reminders_count, due_reminders_count]);
 
   useEffect(() => {
     hydrate_sidebar_state();
@@ -171,7 +176,7 @@ function Sidebar({ user, onOpenSettings, onOpenProfile, onOpenDeveloper, onRetry
           </p>
         )}
         <nav className={`space-y-1 ${!isCompact ? "px-2" : "px-1 flex flex-col items-center"}`}>
-          {mail_items.map(({ label, folder, icon: Icon }) => (
+          {mailItems.map(({ label, folder, icon: Icon }) => (
             <button
               key={label}
               onClick={() => onFolderChange(folder)}
@@ -187,14 +192,41 @@ function Sidebar({ user, onOpenSettings, onOpenProfile, onOpenDeveloper, onRetry
               title={isCompact ? label : undefined}>
               <Icon size={!isCompact ? 16 : 20} className="text-sidebar-text shrink-0" />
               {!isCompact && <span className="sidebar_font">{label}</span>}
-              {!isCompact && folder === "scheduled" && scheduled_count > 0 && (
-                <span className="ml-auto text-[10px] font-medium text-sidebar-text bg-black/5 rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
-                  {scheduled_count}
-                </span>
-              )}
             </button>
           ))}
         </nav>
+        {dynamic_mail_items.length > 0 && (
+          <>
+            <hr className="mx-2 my-3 border-border-subtle" />
+            <nav className={`space-y-1 ${!isCompact ? "px-2" : "px-1 flex flex-col items-center"}`}>
+              {dynamic_mail_items.map(({ label, folder, icon: Icon, count, due }) => (
+                <button
+                  key={label}
+                  onClick={() => onFolderChange(folder)}
+                  className={`relative flex items-center rounded-md hover:bg-black/5 transition-colors cursor-pointer ${
+                    !isCompact
+                      ? "w-full gap-3 px-3 py-1.5 text-sm"
+                      : "justify-center p-2 w-10 h-10"
+                  } ${
+                    !active_view_id && currentFolder === folder
+                      ? "bg-black/10 text-[#37352F] font-medium"
+                      : "text-sidebar-text"
+                  }`}
+                  title={isCompact ? label : undefined}>
+                  <Icon size={!isCompact ? 16 : 20} className={`text-sidebar-text shrink-0 ${due ? "reminder-bell-ringing" : ""}`} />
+                  {!isCompact && <span className="sidebar_font">{label}</span>}
+                  {count != null && count > 0 && (
+                    <span className={isCompact
+                      ? "absolute top-0 right-0 text-[9px] font-medium text-sidebar-text bg-black/10 rounded-full min-w-[14px] h-[14px] leading-[14px] text-center"
+                      : "ml-auto text-[10px] font-medium text-sidebar-text bg-black/5 rounded-full px-1.5 py-0.5 min-w-[18px] text-center"}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </nav>
+          </>
+        )}
         {views_enabled && visible_views.length > 0 && (
           <>
             <hr className="mx-2 my-3 border-border-subtle" />

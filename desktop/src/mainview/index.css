@@ -85,6 +85,26 @@ button {
   -webkit-font-smoothing: antialiased;
 }
 
+@keyframes reminder-bell-ring {
+  0%, 100% { transform: rotate(0deg); }
+  15% { transform: rotate(12deg); }
+  30% { transform: rotate(-10deg); }
+  45% { transform: rotate(8deg); }
+  60% { transform: rotate(-5deg); }
+  75% { transform: rotate(2deg); }
+}
+
+.reminder-bell-ringing {
+  transform-origin: top center;
+  animation: reminder-bell-ring 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reminder-bell-ringing {
+    animation: none;
+  }
+}
+
 .no-drag {
   -webkit-app-region: no-drag;
 }
@@ -114,4 +134,3 @@ button {
 .search-wrapper:focus-within::after {
   background: #5B6BF5;
 }
-

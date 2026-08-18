@@ -19,6 +19,7 @@ const folderLabels: Record<string, string> = {
   sent: "Sent",
   drafts: "Drafts",
   scheduled: "Scheduled",
+  reminders: "Reminders",
   spam: "Spam",
   bin: "Bin",
   __all__: "All Mail",
@@ -31,6 +32,7 @@ function TopBar({ folder, active_view, onCompose, onRefresh, isNewfillSyncing, o
   const inputRef = useRef<HTMLInputElement>(null);
   const searchWrapperRef = useRef<HTMLDivElement>(null);
   const search_focus_request = useAtomValue(search_focus_request_atom);
+  const search_disabled = active_view != null || folder === "scheduled" || folder === "reminders";
 
   useEffect(() => {
     if (search_focus_request > 0) inputRef.current?.focus();
@@ -75,33 +77,37 @@ function TopBar({ folder, active_view, onCompose, onRefresh, isNewfillSyncing, o
 
   return (
     <div className="flex flex-col shrink-0 relative">
-      <div className="flex items-center px-5 border-b border-border-subtle shrink-0 relative">
+      <div className="flex items-center px-5 border-b border-border-subtle shrink-0 relative h-[49px]">
         <div className="w-3/12">
           <h1 className="text-base font-semibold text-text-primary">
             {active_view ? active_view.name : folderLabels[folder] || folder}
           </h1>
         </div>
 
-        <div ref={searchWrapperRef} className="search-wrapper flex-1 mx-auto py-2 relative">
-          <input
-            ref={inputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => setDropdownOpen(true)}
-            onKeyDown={handle_key_down}
-            placeholder="Search mail..."
-            className="w-full py-1.5 text-sm text-text-secondary search_input_box rounded-none outline-none focus:ring-0 transition-colors placeholder:text-text-tertiary"
-          />
-          <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" />
+{search_disabled ? (
+          <div className="search-wrapper flex-1 mx-auto py-2" />
+        ) : (
+          <div ref={searchWrapperRef} className="search-wrapper flex-1 mx-auto py-2 relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setDropdownOpen(true)}
+              onKeyDown={handle_key_down}
+              placeholder="Search mail..."
+              className="w-full py-1.5 text-sm text-text-secondary search_input_box rounded-none outline-none focus:ring-0 transition-colors placeholder:text-text-tertiary"
+            />
+            <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" />
 
-          <SearchDropdown
-            onSelectEmail={onSelectEmail}
-            inputRef={inputRef}
-            highlightIdx={highlightIdx}
-            setHighlightIdx={setHighlightIdx}
-          />
-        </div>
+            <SearchDropdown
+              onSelectEmail={onSelectEmail}
+              inputRef={inputRef}
+              highlightIdx={highlightIdx}
+              setHighlightIdx={setHighlightIdx}
+            />
+          </div>
+        )}
 
         <div className="w-4/12 flex items-center gap-2 justify-end">
           {!active_view && (
@@ -142,7 +148,7 @@ function TopBar({ folder, active_view, onCompose, onRefresh, isNewfillSyncing, o
           <FilterControlBar
             selectable_folder={false}
             folder={folder}
-            on_folder_change={() => {}}
+            on_folder_change={() => { }}
             clauses={filter_clauses}
             on_clauses_change={set_filter_clauses}
             disabled={false}

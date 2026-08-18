@@ -1,6 +1,6 @@
 import { messages } from "@/shared/rpc_messages";
 import { outbox_commands } from "@/shared/outbox_commands";
-import { rpc } from "../rpc";
+import { rpc } from "../../rpc";
 
 type ActionSpec = {
   command: string;
@@ -10,8 +10,7 @@ type ActionSpec = {
 
 const current_starred = (email: EmailPreviewWire): number => email.is_starred ?? 0;
 const current_flagged = (email: EmailPreviewWire): number => email.is_flagged ?? 0;
-const toggle_value = (current: number, value?: number): number =>
-  value ?? 1 - current;
+const toggle_value = (current: number, value?: number): number => value ?? 1 - current;
 
 const action_specs: Record<string, (email: EmailPreviewWire, value?: number) => ActionSpec> = {
   mark_read: () => ({

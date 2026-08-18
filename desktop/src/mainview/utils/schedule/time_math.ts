@@ -68,9 +68,19 @@ export function next_day_of_month(day: number, now: number): number | null {
   return null;
 }
 
+export function next_month_day_ts(day: number, now: number): number | null {
+  const date = new Date(now);
+  date.setDate(1);
+  date.setMonth(date.getMonth() + 1);
+  date.setHours(9, 0, 0, 0);
+  date.setDate(day);
+  if (date.getDate() !== day) return null;
+  return date.getTime();
+}
+
 export function humanize_time(ts: number): string {
   const d = new Date(ts);
-  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
   const opts: Intl.DateTimeFormatOptions = ts - Date.now() <= WEEK ? { weekday: "long" } : { month: "short", day: "numeric" };
   if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
   return d.toLocaleDateString([], opts) + " at " + time;

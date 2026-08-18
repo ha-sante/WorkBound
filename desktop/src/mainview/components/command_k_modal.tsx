@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import {
   command_k_modal_open_atom,
-  currentMailComposeAtom,
+  composeMetaAtom,
   currentMailViewAtom,
   currentThreadViewAtom,
   settings_open_atom,
   email_list_selection_atom,
   compose_actions_atom,
+  command_k_modal_request_atom,
 } from "../state";
+import { messages } from "@/shared/rpc_messages";
+import { rpc } from "../rpc";
 import { commands, surface_of, command_glyph, type Command } from "../hooks/use_commands";
 import { parse_schedule_candidates, humanize_time, expand_schedule_query } from "../utils/schedule";
 
@@ -21,6 +24,54 @@ type Row = {
 };
 
 type ActDef = { id: string; label: string; aliases: string[] };
+
+function ordinal_day(day: number): string {
+  const suffix = day % 10 === 1 && day % 100 !== 11
+    ? "st"
+    : day % 10 === 2 && day % 100 !== 12
+      ? "nd"
+      : day % 10 === 3 && day % 100 !== 13
+        ? "rd"
+        : "th";
+  return `${day}${suffix}`;
+}
+
+function format_reminder_candidate(ts: number): { label: string; time: string } {
+  const date = new Date(ts);
+  const now = new Date();
+  const today = date.toDateString() === now.toDateString();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const is_tomorrow = date.toDateString() === tomorrow.toDateString();
+  const label = today
+    ? "Today"
+    : is_tomorrow
+      ? "Tomorrow"
+      : `${ordinal_day(date.getDate())} - ${date.toLocaleDateString([], { weekday: "long" })}`;
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+  return { label, time };
+}
+
+function format_schedule_candidate(ts: number): { label: string; hint: string } {
+  const date = new Date(ts);
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const is_today = date.toDateString() === now.toDateString();
+  const is_tomorrow = date.toDateString() === tomorrow.toDateString();
+  const label = is_today
+    ? "Later today"
+    : is_tomorrow
+      ? "Tomorrow"
+      : date.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+  const date_label = is_today
+    ? "Today"
+    : is_tomorrow
+      ? "Tomorrow"
+      : date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+  return { label, hint: `${date_label} at ${time}` };
+}
 
 const ACT_DEFS: Record<string, ActDef> = {
   send: { id: "send", label: "Send now", aliases: ["send", "send now"] },
@@ -74,11 +125,15 @@ function key_hint(c: Command): string | undefined {
 
 type Props = {
   execute: (id: string) => void;
+  views?: FilteredViewWire[];
+  scheduled_count?: number;
+  reminders_count?: number;
 };
 
-function CommandKModal({ execute }: Props) {
+function CommandKModal({ execute, views, scheduled_count, reminders_count }: Props) {
   const [open, setOpen] = useAtom(command_k_modal_open_atom);
-  const compose = useAtomValue(currentMailComposeAtom);
+  const [reminder_request, set_reminder_request] = useAtom(command_k_modal_request_atom);
+  const compose = useAtomValue(composeMetaAtom);
   const current_view = useAtomValue(currentMailViewAtom);
   const current_thread_view = useAtomValue(currentThreadViewAtom);
   const settings_open = useAtomValue(settings_open_atom);
@@ -89,6 +144,23 @@ function CommandKModal({ execute }: Props) {
   const [highlight, setHighlight] = useState(0);
 
   const surface = surface_of(compose.phase, !!current_view, !!current_thread_view, settings_open);
+
+  const run_reminder = useCallback((remind_at: number) => {
+    if (!reminder_request || reminder_request.mode !== "reminder") return;
+    const request = reminder_request.reminder_id
+      ? rpc.request(messages.reminders_update, {
+        id: reminder_request.reminder_id,
+        account_id: reminder_request.account_id,
+        remind_at,
+      })
+      : rpc.request(messages.reminders_create, {
+        account_id: reminder_request.account_id,
+        email_id: reminder_request.email_id,
+        thread_id: reminder_request.thread_id,
+        remind_at,
+      });
+    request.catch(() => {});
+  }, [reminder_request]);
 
   const unique_commands = useMemo(() => {
     const map = new Map<string, Command>();
@@ -103,6 +175,44 @@ function CommandKModal({ execute }: Props) {
   const rows: Row[] = useMemo(() => {
     const q = query.trim().toLowerCase();
     const act: Row[] = [];
+
+    if (reminder_request?.mode === "reminder") {
+      const default_queries = [
+        { query: "later today", label: "Later today" },
+        { query: "tomorrow", label: "Tomorrow" },
+        { query: "this weekend", label: "This weekend" },
+        { query: "next week", label: "Next week" },
+      ];
+      const candidates = q
+        ? parse_schedule_candidates(query)
+        : default_queries.flatMap((default_query) => parse_schedule_candidates(default_query.query).slice(0, 1).map((candidate) => ({ ...candidate, label: default_query.label })));
+      return candidates.map((candidate) => ({
+        id: `reminder:${candidate.ts}`,
+        label: format_reminder_candidate(candidate.ts).label,
+        hint: format_reminder_candidate(candidate.ts).time,
+        section: "act",
+        run: () => run_reminder(candidate.ts),
+      }));
+    }
+
+    if (reminder_request?.mode === "schedule") {
+      const default_queries = [
+        { query: "in 1 hour", label: "In 1 hour" },
+        { query: "in 2 hours", label: "In 2 hours" },
+        { query: "tomorrow at 9", label: "Tomorrow morning" },
+        { query: "next monday at 9", label: "Next Monday morning" },
+      ];
+      const candidates = q
+        ? parse_schedule_candidates(query).map((candidate) => ({ ...candidate, label: `Send ${format_schedule_candidate(candidate.ts).label}` }))
+        : default_queries.flatMap((default_query) => parse_schedule_candidates(default_query.query).slice(0, 1).map((candidate) => ({ ...candidate, label: default_query.label })));
+      return candidates.map((candidate) => ({
+        id: `schedule-send:${candidate.ts}`,
+        label: candidate.label,
+        hint: format_schedule_candidate(candidate.ts).hint,
+        section: "act",
+        run: () => compose_actions.send_at(candidate.ts),
+      }));
+    }
 
     if (surface === "compose") {
       if (q) {
@@ -132,8 +242,21 @@ function CommandKModal({ execute }: Props) {
       .filter((c) => matches(query, c.label, c.aliases))
       .map((c) => ({ id: c.id, label: c.label, hint: key_hint(c), section: "cmd", run: () => execute(c.id) }));
 
-    return [...act, ...cmd];
-  }, [surface, query, unique_commands, selection, compose.phase, compose_actions, execute]);
+    const nav: Row[] = [];
+    if ((scheduled_count ?? 0) > 0 && matches(query, "Go to Scheduled", ["scheduled", "scheduled emails", "s c"])) {
+      nav.push({ id: "goto-scheduled", label: "Go to Scheduled", hint: "s c", section: "cmd", run: () => execute("goto-scheduled") });
+    }
+    if ((reminders_count ?? 0) > 0 && matches(query, "Go to Reminders", ["reminders", "reminder emails", "r e"])) {
+      nav.push({ id: "goto-reminders", label: "Go to Reminders", hint: "r e", section: "cmd", run: () => execute("goto-reminders") });
+    }
+    for (const [index, view] of (views ?? []).entries()) {
+      if (matches(query, view.name, [`p${index + 1}`])) {
+        nav.push({ id: `goto-view:${view.id}`, label: view.name, hint: `p${index + 1}`, section: "cmd", run: () => execute(`goto-view:${view.id}`) });
+      }
+    }
+
+    return [...act, ...cmd, ...nav];
+  }, [surface, query, unique_commands, selection, compose.phase, compose_actions, execute, reminder_request, run_reminder, views, scheduled_count, reminders_count]);
 
   useEffect(() => {
     if (open) {
@@ -149,7 +272,10 @@ function CommandKModal({ execute }: Props) {
 
   if (!open) return null;
 
-  const close = () => setOpen(false);
+  const close = () => {
+    setOpen(false);
+    set_reminder_request(null);
+  };
 
   const on_key_down = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -187,17 +313,28 @@ function CommandKModal({ execute }: Props) {
         className="w-[560px] max-h-[480px] rounded-xl bg-white shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={on_key_down}
-          placeholder="Type a command or action…"
-          className="w-full px-4 py-3 text-sm border-b border-slate-100 outline-none placeholder:text-slate-400"
-        />
+          <div className="flex items-center border-b border-slate-100 px-4">
+          {reminder_request?.mode === "reminder" && (
+            <span className="shrink-0 pr-2 text-sm font-semibold text-text-primary">Later</span>
+          )}
+          {reminder_request?.mode === "schedule" && (
+            <span className="shrink-0 pr-2 text-sm font-semibold text-text-primary">Send Later</span>
+          )}
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={on_key_down}
+            placeholder={reminder_request?.mode === "reminder" ? "When? e.g. tomorrow at 9" : reminder_request?.mode === "schedule" ? "When should this send? e.g. Friday at 2" : "Type a command or action…"}
+            className="w-full py-3 text-sm outline-none placeholder:text-slate-400"
+          />
+        </div>
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {rows.length === 0 && (
+          {rows.length === 0 && !reminder_request && (
             <div className="px-4 py-6 text-sm text-slate-400 text-center">No matches</div>
+          )}
+          {rows.length === 0 && reminder_request?.mode === "schedule" && (
+            <div className="px-4 py-6 text-sm text-slate-400 text-center">Try a time like "tomorrow at 3"</div>
           )}
           {rows.map((row, i) => {
             const show_header = row.section !== prev_section;

@@ -3,13 +3,12 @@ import { useAtom, useSetAtom } from "jotai";
 import {
   emailsByFolderAtom,
   currentMailViewAtom,
-  currentMailComposeAtom,
   currentThreadViewAtom,
   email_list_selection_atom,
-  CLOSED_COMPOSE_STATE,
 } from "../state";
-import { move_email_folder, source_folder_for } from "./email_utils";
-import { enqueue_email_action } from "./email_actions";
+import { move_email_to_folder, find_email_source_folder } from "./utils/email_utils";
+import { enqueue_email_action } from "./utils/email_actions";
+import { use_compose_editor } from "./use_compose_editor";
 
 const list_move_actions = new Set(["delete", "archive", "mark_spam", "mark_phishing", "block_sender", "not_spam"]);
 
@@ -22,7 +21,7 @@ type Params = {
 export function use_mail_actions({ folder, emails, currentIdx }: Params) {
   const [emailsByFolder, setEmailsByFolder] = useAtom(emailsByFolderAtom);
   const [currentView, setCurrentView] = useAtom(currentMailViewAtom);
-  const [, setCurrentCompose] = useAtom(currentMailComposeAtom);
+  const { close } = use_compose_editor();
   const setCurrentThreadView = useSetAtom(currentThreadViewAtom);
   const set_email_list_selection = useSetAtom(email_list_selection_atom);
 
@@ -55,10 +54,10 @@ export function use_mail_actions({ folder, emails, currentIdx }: Params) {
         });
       };
 
-      const src = source_folder_for(emailsByFolder, folder, email_id);
+      const src = find_email_source_folder(emailsByFolder, folder, email_id);
       const dest = moveDest[action];
       if (dest) {
-        setEmailsByFolder((prev) => move_email_folder(prev, email_id, src, dest, inplaceUpdates[action]));
+        setEmailsByFolder((prev) => move_email_to_folder(prev, email_id, src, dest, inplaceUpdates[action]));
         if (currentView) {
           if (currentIdx > 0) {
             setCurrentView({ email: emails[currentIdx - 1], fullEmail: null });
@@ -66,7 +65,7 @@ export function use_mail_actions({ folder, emails, currentIdx }: Params) {
             setCurrentView({ email: emails[currentIdx + 1], fullEmail: null });
           } else {
             setCurrentView(null);
-            setCurrentCompose(CLOSED_COMPOSE_STATE);
+            close();
           }
         } else {
           setCurrentThreadView((prev) => {
@@ -120,7 +119,7 @@ export function use_mail_actions({ folder, emails, currentIdx }: Params) {
         patchThreadEmail({ is_flagged: newFlagged as 0 | 1 });
       }
     },
-    [emailsByFolder, folder, currentIdx, emails, setCurrentView, setCurrentCompose, setCurrentThreadView],
+    [emailsByFolder, folder, currentIdx, emails, setCurrentView, close, setCurrentThreadView],
   );
 
   const handle_list_action = useCallback(

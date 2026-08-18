@@ -3,15 +3,22 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { prefsAtom } from "../../state";
 import { rpc } from "../../rpc";
 import { messages } from "@/shared/rpc_messages";
+import { ExternalLink } from "../ui/external_link";
+import { Select } from "../ui/select";
+import { pref_keys } from "@/shared/pref_keys";
+import { ChevronDown } from "lucide-react";
 
 export function PreferencesPanel() {
   const prefs = useAtomValue(prefsAtom);
   const setPrefs = useSetAtom(prefsAtom);
   const [setupStatus, setSetupStatus] = useState<AppSetupStatusWire | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [setupOpen, setSetupOpen] = useState(true);
 
   const autoStartup = (prefs["general:autoStartup"] as boolean) ?? false;
   const quitAction = (prefs["tray:quitAction"] as "quit" | "hide") ?? "hide";
+  const sendUndo = Boolean(prefs[pref_keys.compose_send_undo] ?? true);
+  const sendUndoSeconds = (prefs[pref_keys.compose_send_undo_seconds] as number) ?? 10;
 
   async function update_pref(key: string, value: unknown) {
     setPrefs((prev) => ({ ...prev, [key]: value }));
@@ -92,54 +99,122 @@ export function PreferencesPanel() {
         </div>
       </div>
 
-      {setupStatus && (
-        <div className="pt-3 mt-3 border-t border-border-subtle space-y-1">
-          <p className="text-sm font-medium text-text-primary pb-1">Setup</p>
+      <div className="pt-3 mt-3 border-t border-border-subtle space-y-1">
+        <p className="text-sm font-medium text-text-primary pb-1">Composer</p>
 
-          {setupStatus.rows.map((row) => (
-            <div key={row.key} className="flex items-center justify-between py-3 gap-4">
-              <div>
-                <p className="text-sm font-medium text-text-primary">{row.title}</p>
-                <p className="text-xs text-text-secondary mt-0.5">
-                  {row.description}{" "}
-                  {row.guide_url && (
-                    <a
-                      href={row.guide_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline"
-                    >
-                      See Guide
-                    </a>
-                  )}
-                </p>
-              </div>
-              {row.done ? (
-                <span className="px-3 py-1.5 text-xs rounded-md bg-black/5 text-text-secondary opacity-50 shrink-0">
-                  {row.done_label}
-                </span>
-              ) : (
-                <button
-                  onClick={() =>
-                    run_setup(row.key, () => {
-                      switch (row.key) {
-                        case "move":
-                          return rpc.request(messages.app_setup_move_to_applications);
-                        case "launcher":
-                          return rpc.request(messages.app_setup_add_launcher);
-                        case "mail_handler":
-                          return rpc.request(messages.app_setup_set_default_mail_handler, {});
+        <div className="flex items-center justify-between py-3 gap-4">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Enable Undo Send</p>
+            <p className="text-xs text-text-secondary mt-0.5">Show an Undo option after sending so you can cancel it.</p>
+          </div>
+          <button
+            onClick={() => update_pref(pref_keys.compose_send_undo, !sendUndo)}
+            className={`relative w-10 h-5 rounded-full transition-colors cursor-pointer shrink-0 ${
+              sendUndo ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                sendUndo ? "translate-x-5" : "translate-x-0"
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className={`flex items-center justify-between py-3 gap-4 ${sendUndo ? "" : "opacity-40 pointer-events-none"}`}>
+          <div>
+            <p className="text-sm font-medium text-text-primary">Undo Send Time Window</p>
+            <p className="text-xs text-text-secondary mt-0.5">How long after sending the Undo option stays available.</p>
+          </div>
+          <Select
+            value={String(sendUndoSeconds)}
+            onChange={(e) => update_pref(pref_keys.compose_send_undo_seconds, Number(e.target.value))}
+            full_width={false}>
+            <option value="5">5 seconds</option>
+            <option value="10">10 seconds</option>
+            <option value="30">30 seconds</option>
+          </Select>
+        </div>
+      </div>
+
+      {setupStatus && (
+        <div className="pt-3 mt-3 border-t border-border-subtle">
+          <button
+            onClick={() => setSetupOpen((o) => !o)}
+            className="flex items-center justify-between w-full py-1 cursor-pointer text-left"
+            aria-expanded={setupOpen}>
+            <p className="text-sm font-medium text-text-primary">Setup</p>
+            <ChevronDown
+              size={16}
+              className={`text-text-secondary transition-transform duration-200 ${setupOpen ? "" : "-rotate-90"}`}
+            />
+          </button>
+
+          {setupOpen && (
+            <div className="space-y-1 pt-1">
+              {setupStatus.rows.map((row) => (
+                <div key={row.key} className="flex items-center justify-between py-3 gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">{row.title}</p>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      {row.description}{" "}
+                      {row.guide_url && (
+                        <ExternalLink href={row.guide_url} className="underline">
+                          See Guide
+                        </ExternalLink>
+                      )}
+                    </p>
+                  </div>
+                  {row.done ? (
+                    <span className="px-3 py-1.5 text-xs rounded-md bg-black/5 text-text-secondary opacity-50 shrink-0">
+                      {row.done_label}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() =>
+                        run_setup(row.key, () => {
+                          switch (row.key) {
+                            case "move":
+                              return rpc.request(messages.app_setup_move_to_applications);
+                            case "launcher":
+                              return rpc.request(messages.app_setup_add_launcher);
+                            case "mail_handler":
+                              return rpc.request(messages.app_setup_set_default_mail_handler, {});
+                          }
+                        })
                       }
-                    })
-                  }
-                  disabled={busy !== null}
-                  className="px-3 py-1.5 text-xs rounded-md bg-black/5 hover:bg-black/10 text-text-primary transition-colors cursor-pointer disabled:opacity-40 shrink-0"
-                >
-                  {busy === row.key ? "Working..." : row.action_label}
+                      disabled={busy !== null}
+                      className="px-3 py-1.5 text-xs rounded-md bg-black/5 hover:bg-black/10 text-text-primary transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                    >
+                      {busy === row.key ? "Working..." : row.action_label}
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div className="flex items-center justify-between py-3 gap-4">
+                <div>
+                  <p className="text-sm font-medium text-text-primary">Keyboard Bindings</p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    Global shortcuts need macOS accessibility access.{" "}
+                    <ExternalLink
+                      href="https://github.com/ha-sante/WorkBound/blob/main/docs/Keyboard.md"
+                      className="underline">
+                      keyboard bindings
+                    </ExternalLink>
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    rpc.request(messages.shortcuts_open_accessibility_settings).catch(() => {
+                      console.warn("preferences_panel: failed to open accessibility settings");
+                    });
+                  }}
+                  className="px-3 py-1.5 text-xs rounded-md bg-black/5 hover:bg-black/10 text-text-primary transition-colors cursor-pointer shrink-0">
+                  Open
                 </button>
-              )}
+              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

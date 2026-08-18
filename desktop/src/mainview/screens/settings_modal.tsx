@@ -18,7 +18,7 @@ import { LabelsPanel } from "../components/settings/labels_panel";
 import { ContactsPanel } from "../components/settings/contacts_panel";
 import { DeveloperPanel } from "../components/settings/developer_panel";
 import { useAccount } from "../hooks/use_current_account";
-import type { SyncEngineState } from "../hooks/sync_state";
+import type { SyncEngineState } from "../hooks/utils/sync_state";
 
 type Props = {
   isOpen: boolean;
@@ -81,7 +81,7 @@ function SettingsModal({ isOpen, onClose, onLogout, onDisconnect, syncState, ini
     >
       <div className="flex w-9/12 h-[75vh] rounded-xl bg-white shadow-2xl overflow-hidden">
         <SettingsSidebar activeTab={activeTab} onTabChange={setActiveTab} onLogout={onLogout} />
-        <Scrollable className="flex-1">
+        <Scrollable className="flex-1 min-w-0">
           {activeTab === "Profile"
             ? <ProfilePanel account={account} onLogout={onLogout} onDisconnect={onDisconnect} />
             : activeTab === "Interface"
@@ -91,7 +91,7 @@ function SettingsModal({ isOpen, onClose, onLogout, onDisconnect, syncState, ini
             : activeTab === "Preferences"
             ? <PreferencesPanel />
             : activeTab === "Notifications"
-            ? <NotificationsPanel />
+             ? <NotificationsPanel account_id={account_id} />
             : activeTab === "Automations"
             ? <AutomationsPanel account_id={account_id} />
             : activeTab === "Intelligence"

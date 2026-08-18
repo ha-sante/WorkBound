@@ -3,7 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { emailsByFolderAtom, copyToastAtom, messageToastAtom, notesAtom, savedFileToastAtom } from "../state";
 import { messages } from "@/shared/rpc_messages";
 import { outbox_commands } from "@/shared/outbox_commands";
-import { move_email_folder } from "./email_utils";
+import { move_email_to_folder } from "./utils/email_utils";
 import { rpc } from "../rpc";
 
 function find_one(
@@ -109,7 +109,7 @@ export function useContextMenu() {
       }).catch((err: any) => console.error("[ctxMenu] outbox_enqueue", err));
 
       setEmailsByFolder((prev) =>
-        move_email_folder(prev, email_id, fromFolder ?? email.folder, targetFolder, updates),
+        move_email_to_folder(prev, email_id, fromFolder ?? email.folder, targetFolder, updates),
       );
     },
     [setEmailsByFolder, emailsByFolder],

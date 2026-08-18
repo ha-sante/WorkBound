@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useSetAtom } from "jotai";
 import { emailsByFolderAtom, alertToastAtom, draftCommittedPayloadAtom } from "../state";
 import { messages } from "@/shared/rpc_messages";
-import { move_email_folder } from "./email_utils";
+import { move_email_to_folder } from "./utils/email_utils";
 import { rpc } from "../rpc";
 
 export function useEmailCommands() {
@@ -33,7 +33,7 @@ export function useEmailCommands() {
           const toFolder = payload.toFolder;
           if (fromFolder && toFolder) {
             setEmailsByFolder((prev) =>
-              move_email_folder(prev, payload.email_id, fromFolder, toFolder, payload.updates)
+              move_email_to_folder(prev, payload.email_id, fromFolder, toFolder, payload.updates)
             );
           }
           break;

@@ -4,7 +4,7 @@
 
 # WorkBound
 
-1 to 1 Notion Mail replacement - calm email desktop client for business and professionals.
+1 to 1 Notion Mail replacement - calm email desktop client - for business or professional.
 - [Watch Walkthrough Video](https://www.youtube.com/watch?v=oKx7v0hIip4)
 
 
@@ -47,11 +47,29 @@ In other to maintain practically & longevity of project - i make these descision
 
 ## Features:
 
-1. Complete Offline Support.
-2. Supports 100k plus Inboxes.
-3. Regular Email features
-4. ...watch the above walkthrough video.
+1. Complete Offline Support:
+   1. Instant email viewing
+   2. Instant email actions
+   3. All ops supported.
+   4. Supports 100k+ Inboxes.
+2. Regular Email features:
+   1. Compose, Reply, Reply All & Forward
+   2. Attachments
+   3. Search & Filters
+   4. Labels, Stars & Important Markers
+   5. Archive, Delete & Spam Controls
+   6. Drafts, Signatures & Aliases
+3. Beyond Regular Email:
+   1. Scheduled Sending
+   2. Email Reminders
+   3. Undo Send
+   4. Command Palette & Keyboard Shortcuts
+   5. Custom Filtered Views
+   6. Intelligence Layer - (auto labelling)
+   7. Private Image Proxying
+   8. Templates & Notes
 
+[Watch Walkthrough Video](https://www.youtube.com/watch?v=oKx7v0hIip4)
 
 ## Roadmap:
 - [x] Finish the notion mail 1 to 1 baseline

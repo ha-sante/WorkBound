@@ -24,6 +24,8 @@ export function ProfilePanel({ account, onLogout, onDisconnect }: { account: Acc
     };
   }, []);
 
+  if (!account) return <div className="p-6 text-sm text-text-secondary">No account selected.</div>;
+
   const handleResync = async () => {
     setLoading(true);
     try {
@@ -88,8 +90,7 @@ export function ProfilePanel({ account, onLogout, onDisconnect }: { account: Acc
       <div className="space-y-3">
         <button
           onClick={() => setAliasesOpen(!aliasesOpen)}
-          className="flex items-center justify-between w-full text-left cursor-pointer"
-        >
+          className="flex items-center justify-between w-full text-left cursor-pointer">
           <h3 className="text-sm font-medium text-text-primary">Account Aliases</h3>
           <ChevronRight
             size={16}
@@ -136,8 +137,7 @@ export function ProfilePanel({ account, onLogout, onDisconnect }: { account: Acc
           <button
             onClick={handleResync}
             disabled={loading}
-            className="px-4 py-1.5 text-sm border border-border-subtle rounded hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0 disabled:opacity-40"
-          >
+            className="px-4 py-1.5 text-sm border border-border-subtle rounded hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0 disabled:opacity-40">
             {loading ? "Syncing..." : syncDone ? "Synced ✓" : "Refresh"}
           </button>
         </div>
@@ -150,8 +150,7 @@ export function ProfilePanel({ account, onLogout, onDisconnect }: { account: Acc
           <button
             onClick={handleReconnect}
             disabled={reconnectLoading}
-            className="px-4 py-1.5 text-sm border border-border-subtle rounded hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0 disabled:opacity-40"
-          >
+            className="px-4 py-1.5 text-sm border border-border-subtle rounded hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0 disabled:opacity-40">
             {reconnectLoading ? "Opening..." : reconnectDone ? "Done ✓" : "Reconnect"}
           </button>
         </div>
@@ -163,8 +162,7 @@ export function ProfilePanel({ account, onLogout, onDisconnect }: { account: Acc
           </div>
           <button
             onClick={onLogout}
-            className="px-4 py-1.5 text-sm border border-border-subtle rounded hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0"
-          >
+            className="px-4 py-1.5 text-sm border border-border-subtle rounded hover:bg-black/[0.04] transition-colors cursor-pointer shrink-0">
             Logout
           </button>
         </div>
@@ -176,8 +174,7 @@ export function ProfilePanel({ account, onLogout, onDisconnect }: { account: Acc
           </div>
           <button
             onClick={onDisconnect}
-            className="px-4 py-1.5 text-sm border border-red-200 text-red-500 rounded hover:bg-red-50 transition-colors cursor-pointer shrink-0"
-          >
+            className="px-4 py-1.5 text-sm border border-red-200 text-red-500 rounded hover:bg-red-50 transition-colors cursor-pointer shrink-0">
             Disconnect
           </button>
         </div>

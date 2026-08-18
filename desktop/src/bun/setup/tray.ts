@@ -2,9 +2,14 @@ import Electrobun, { Tray, Utils } from "electrobun/bun";
 import { logger } from "../utils/logger";
 import { record_manual_launch } from "../utils/startup";
 
+let force_quit = false;
+let update_quit = false;
+export function set_update_quit() {
+  update_quit = true;
+}
+
 export function setup_tray(getWin: () => any, createWindow: () => any, getQuitAction: () => "quit" | "hide", start_in_tray = false) {
   logger.info("app", "setup:tray");
-  let force_quit = false;
   let isWindowAlive = true;
   let isWindowVisible = !start_in_tray;
 
@@ -110,7 +115,7 @@ export function setup_tray(getWin: () => any, createWindow: () => any, getQuitAc
   });
 
   Electrobun.events.on("before-quit", (e: any) => {
-    if (!force_quit && getQuitAction() === "hide") {
+    if (!force_quit && !update_quit && getQuitAction() === "hide") {
       e.response = { allow: false };
       const w = getWin();
       if (isWindowAlive) {

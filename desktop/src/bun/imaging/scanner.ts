@@ -1,4 +1,5 @@
 import { imageParser } from './parser'
+import { html_decode_url } from '../utils/html'
 
 type ImageDimensionsResult = { dimensions: Record<string, { w: number; h: number }>; measured: boolean };
 export async function scan_image_dimensions(proxyBase: string, proxyKey: string, body_html: string): Promise<ImageDimensionsResult> {
@@ -16,7 +17,7 @@ export async function scan_image_dimensions(proxyBase: string, proxyKey: string,
 
   const proxyUrls = urls.map((u) => {
     if (u.startsWith('data:')) return u;
-    return u.startsWith(proxyBase) ? u : `${proxyBase}/image_proxy?url=${encodeURIComponent(u)}&k=${proxyKey}`;
+    return u.startsWith(proxyBase) ? u : `${proxyBase}/image_proxy?url=${encodeURIComponent(html_decode_url(u))}&k=${proxyKey}`;
   });
 
   for (const url of proxyUrls) {

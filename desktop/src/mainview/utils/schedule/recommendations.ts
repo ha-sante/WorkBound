@@ -6,6 +6,7 @@ import {
   last_day_of_month_ts,
   next_clock_ts,
   next_day_of_month,
+  next_month_day_ts,
   next_weekday_ts,
 } from "./time_math";
 import { FILLER_WORDS, WEEKDAYS } from "./tokens";
@@ -106,6 +107,19 @@ export function number_ordinal_candidates(tokens: string[], now: number): Schedu
     if (ts !== null) out.push(cand(ts, humanize_time(ts)));
   }
   return out;
+}
+
+export function next_month_day_candidates(tokens: string[], now: number): ScheduleCandidate[] {
+  const nums = tokens.filter((t) => /^\d{1,2}(?:st|nd|rd|th)?$/.test(t));
+  const words = tokens.filter((t) => !/^\d{1,2}(?:st|nd|rd|th)?$/.test(t) && !FILLER_WORDS.has(t));
+  const has_next = words.some((t) => "next".startsWith(t));
+  const has_month = words.some((t) => "month".startsWith(t));
+  if (!has_next || !has_month || nums.length !== 1 || words.some((t) => !"next month".split(" ").some((word) => word.startsWith(t)))) return [];
+
+  const day = parseInt(nums[0], 10);
+  if (day < 1 || day > 31) return [];
+  const ts = next_month_day_ts(day, now);
+  return ts === null ? [] : [cand(ts, `Next month ${day}`)];
 }
 
 export function epoch_list_tokens(tokens: string[], min_epochs = 2): string[] | null {

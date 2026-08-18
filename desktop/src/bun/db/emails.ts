@@ -331,7 +331,7 @@ function attach_thread_counts(rows: EmailPreview[]): EmailPreview[] {
   const counts = getDb()
     .select({ thread_id: emails.thread_id, count: sql<number>`count(*)` })
     .from(emails)
-    .where(and(inArray(emails.thread_id, threadIds), sql`${emails.folder} NOT IN ('drafts', 'sent')`))
+    .where(and(inArray(emails.thread_id, threadIds), sql`${emails.folder} NOT IN ('drafts')`))
     .groupBy(emails.thread_id)
     .all();
   const map = new Map(counts.map((c) => [c.thread_id, c.count]));

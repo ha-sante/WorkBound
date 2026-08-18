@@ -8,7 +8,7 @@ export default {
 	app: {
 		name: "WorkBound",
 		identifier: APP_IDENTIFIER,
-		version: "1.0.3",
+		version: "1.0.4",
 		description: "Calm email desktop client for business and professionals.",
 		urlSchemes: ["mailto"],
 	},

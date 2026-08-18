@@ -4,6 +4,7 @@ import AuthenticatedScreen from "./screens/authenticated_screen";
 import AppSetupMoveScreen from "./components/app_setup_move_screen";
 import { useSyncState } from "./hooks/use_sync_state";
 import { useLoadEmails } from "./hooks/use_load_emails";
+import { use_prefetch_mail_bodies } from "./hooks/use_prefetch_mail_bodies";
 import { useContextMenu } from "./hooks/use_context_menu";
 import { useEmailCommands } from "./hooks/use_email_commands";
 import { messages } from "@/shared/rpc_messages";
@@ -15,6 +16,7 @@ import { AlertToast } from "./components/ui/alert_toast";
 import { MessageToast } from "./components/ui/message_toast";
 import { FileToast } from "./components/ui/file_toast";
 import { UpdateToast } from "./components/ui/update_toast";
+import { SentToast } from "./components/ui/sent_toast";
 import { useAutoUpdate } from "./hooks/use_auto_update";
 import { SessionExpiredBanner } from "./components/ui/session_expired_banner";
 import { ConfigProvider } from "./hooks/use_config";
@@ -36,7 +38,8 @@ function App() {
   const setAccountsAtom = useSetAtom(accountsAtom);
   const { state, check_for_new_mail, reset_sync_state, setPaginationAnchors } = useSyncState(account_id);
   const actions = useMemo(() => ({ setPaginationAnchors }), [setPaginationAnchors]);
-  useLoadEmails(account_id, actions);
+  const initial_load_complete = useLoadEmails(account_id, actions);
+  use_prefetch_mail_bodies(account_id, initial_load_complete);
 
   useEffect(() => {
     (async () => {
@@ -80,7 +83,7 @@ function App() {
   }, [setAccountId, setAccountsAtom]);
 
   const handleLogout = useCallback(async () => {
-	await rpc.request(messages.services_stop);
+    await rpc.request(messages.services_stop);
     await rpc.request(messages.account_logout);
     reset_sync_state();
     setAccounts([]);
@@ -89,12 +92,12 @@ function App() {
   }, [reset_sync_state, setAccountId, setAccountsAtom]);
 
   const handleDisconnect = useCallback(async () => {
-	await rpc.request(messages.services_stop);
+    await rpc.request(messages.services_stop);
     await rpc.request(messages.account_delete_all);
     reset_sync_state();
     setAccounts([]);
     setAccountsAtom([]);
-	setAccountId(null);
+    setAccountId(null);
   }, [reset_sync_state, setAccountId, setAccountsAtom]);
 
   useEffect(() => {
@@ -133,6 +136,7 @@ function App() {
           <MessageToast />
           <FileToast />
           <UpdateToast />
+          <SentToast />
           <SessionExpiredBanner />
         </>
       )}

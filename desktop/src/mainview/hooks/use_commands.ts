@@ -1,9 +1,11 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
-  currentMailComposeAtom,
+  currentAccountIdAtom,
+  composeMetaAtom,
   currentMailViewAtom,
   currentThreadViewAtom,
+  emailsByFolderAtom,
   email_list_selection_atom,
   email_list_hover_atom,
   settings_open_atom,
@@ -14,7 +16,13 @@ import {
   active_filtered_view_atom,
   compose_actions_atom,
   command_k_modal_open_atom,
+  command_k_modal_request_atom,
+  filtered_views_enabled_atom,
+  filtered_views_atom_for,
 } from "../state";
+import { messages } from "@/shared/rpc_messages";
+import { rpc } from "../rpc";
+import { row_email } from "../utils/mail_display_utils";
 
 type Mods = "none" | "cmd" | "shift";
 type Surface = "shell" | "viewer" | "compose" | "modal" | "any";
@@ -80,6 +88,7 @@ const commands: Command[] = [
   { id: "toggle_important", surface: "viewer", key: "i", label: "Toggle important", aliases: ["important", "mark important", "flag"] },
   { id: "mark_unread", surface: "viewer", key: "u", label: "Mark as unread", aliases: ["mark unread", "mark as unread", "unread"] },
   { id: "block_sender", surface: "viewer", key: "b", label: "Block sender", aliases: ["block", "block sender"] },
+  { id: "remind-later", surface: "viewer", key: "l", label: "Remind me later", aliases: ["remind later", "remind me later", "later", "remind"] },
 
   // Group 4 — Composer actions
   { id: "send", surface: "compose", key: "s", mods: "cmd", label: "Send email", aliases: ["send", "send now", "send email"] },
@@ -89,6 +98,39 @@ const commands: Command[] = [
   { id: "undo-send", surface: "compose", key: "u", mods: "cmd", phase: "sent", label: "Undo send", aliases: ["undo send", "undo"] },
   { id: "save-exit", surface: "compose", key: "Escape", label: "Save & close", aliases: ["save and exit", "save & close", "save and close", "save close"] },
 ];
+
+const build_settings_command = (has_scheduled: boolean): Command => {
+  const sequence: SequenceBranch[] = [{ key: "e", id: "goto-sent" }, { key: "p", id: "goto-spam" }];
+  if (has_scheduled) sequence.push({ key: "c", id: "goto-scheduled" });
+  return { id: "settings", surface: "shell", key: "s", selection: false, sequence, label: "Open Settings", aliases: ["open settings", "settings", "preferences"] };
+};
+
+const build_reload_command = (has_reminders: boolean): Command => {
+  const sequence = has_reminders ? [{ key: "e", id: "goto-reminders" }] : [];
+  return {
+    id: "reload",
+    surface: "shell",
+    key: "r",
+    selection: false,
+    ...(sequence.length ? { sequence } : {}),
+    label: "Check for mail",
+    aliases: ["refresh", "check mail", "check for mail", "reload"],
+  };
+};
+
+const build_view_command = (views_enabled: boolean, views: FilteredViewWire[]): Command | null => {
+  if (!views_enabled || views.length === 0) return null;
+  return {
+    id: "goto-view",
+    surface: "shell",
+    key: "p",
+    selection: false,
+    quiet: true,
+    sequence: views.map((view, index) => ({ key: String(index + 1), id: `goto-view:${view.id}` })),
+    label: "Go to filtered view",
+    aliases: views.map((_view, index) => `p${index + 1}`),
+  };
+};
 
 const surface_of = (
   phase: string,
@@ -131,8 +173,10 @@ const is_editable_target = (target: EventTarget | null): boolean =>
   (target.closest("input, textarea, [contenteditable]") !== null);
 
 type UseCommandsOptions = {
-  emails?: EmailPreviewWire[];
-  on_open_email?: (email: EmailPreviewWire) => void;
+  rows?: MailListRow[];
+  scheduled_count?: number;
+  reminders_count?: number;
+  on_open_row?: (row: MailListRow) => void;
   on_reload?: () => void;
   on_compose?: () => void;
   on_list_action?: (email: EmailPreviewWire, action: string, value?: number) => void;
@@ -144,7 +188,7 @@ type UseCommandsOptions = {
 };
 
 export function use_commands(options: UseCommandsOptions = {}) {
-  const compose = useAtomValue(currentMailComposeAtom);
+  const compose = useAtomValue(composeMetaAtom);
   const current_view = useAtomValue(currentMailViewAtom);
   const current_thread_view = useAtomValue(currentThreadViewAtom);
   const settings_open = useAtomValue(settings_open_atom);
@@ -158,14 +202,25 @@ export function use_commands(options: UseCommandsOptions = {}) {
   const set_current_folder = useSetAtom(folderAtom);
   const set_active_view_id = useSetAtom(active_filtered_view_atom);
   const compose_actions = useAtomValue(compose_actions_atom);
+  const account_id = useAtomValue(currentAccountIdAtom);
+  const emails_by_folder = useAtomValue(emailsByFolderAtom);
+  const views_enabled = useAtomValue(filtered_views_enabled_atom);
+  const views_atom = useMemo(() => filtered_views_atom_for(account_id ?? ""), [account_id]);
+  const views = useAtomValue(views_atom);
+  const visible_views = useMemo(
+    () => views.filter((view) => view.visible).sort((a, b) => a.position - b.position),
+    [views],
+  );
+  const set_command_open = useSetAtom(command_k_modal_open_atom);
+  const set_command_request = useSetAtom(command_k_modal_request_atom);
   const palette_open = useAtomValue(command_k_modal_open_atom);
   const set_palette_open = useSetAtom(command_k_modal_open_atom);
   const pending = useRef<{ command: Command; timer: ReturnType<typeof setTimeout> } | null>(null);
 
-  const emails_ref = useRef(options.emails ?? []);
-  emails_ref.current = options.emails ?? [];
-  const on_open_email_ref = useRef(options.on_open_email);
-  on_open_email_ref.current = options.on_open_email;
+  const rows_ref = useRef(options.rows ?? []);
+  rows_ref.current = options.rows ?? [];
+  const on_open_row_ref = useRef(options.on_open_row);
+  on_open_row_ref.current = options.on_open_row;
   const on_reload_ref = useRef(options.on_reload);
   on_reload_ref.current = options.on_reload;
   const on_compose_ref = useRef(options.on_compose);
@@ -196,6 +251,9 @@ export function use_commands(options: UseCommandsOptions = {}) {
   const compose_actions_ref = useRef(compose_actions);
   compose_actions_ref.current = compose_actions;
 
+  const emails_by_folder_ref = useRef(emails_by_folder);
+  emails_by_folder_ref.current = emails_by_folder;
+
   const execute_ref = useRef<(id: string) => void>(() => {});
 
   useEffect(() => {
@@ -215,11 +273,11 @@ export function use_commands(options: UseCommandsOptions = {}) {
     };
 
     const run_action = (action: string) => {
-      const emails = emails_ref.current;
+      const rows = rows_ref.current;
       const sel = selection_ref.current;
       const hover_anchor = (): number => {
         const h = hover_ref.current;
-        if (h >= 0 && h < emails.length) return h;
+        if (h >= 0 && h < rows.length) return h;
         return -1;
       };
       const goto_folder = (folder: string) => {
@@ -229,12 +287,12 @@ export function use_commands(options: UseCommandsOptions = {}) {
       switch (action) {
         case "move-down":
           set_selection((s) => {
-            if (emails.length === 0) return -1;
+            if (rows.length === 0) return -1;
             if (s === -1) {
               const anchor = hover_anchor();
               return anchor !== -1 ? anchor : 0;
             }
-            return Math.min(s + 1, emails.length - 1);
+            return Math.min(s + 1, rows.length - 1);
           });
           return;
         case "move-up":
@@ -251,8 +309,8 @@ export function use_commands(options: UseCommandsOptions = {}) {
           set_search_close((n) => n + 1);
           return;
         case "open-email": {
-          const email = emails[sel];
-          if (email) on_open_email_ref.current?.(email);
+          const row = rows[sel];
+          if (row) on_open_row_ref.current?.(row);
           return;
         }
         case "settings":
@@ -285,6 +343,38 @@ export function use_commands(options: UseCommandsOptions = {}) {
         case "goto-bin":
           goto_folder("bin");
           return;
+        case "goto-scheduled":
+          goto_folder("scheduled");
+          return;
+        case "goto-reminders":
+          goto_folder("reminders");
+          return;
+        case "remind-later": {
+          const viewer_email = viewer_email_ref.current;
+          if (!viewer_email) return;
+          set_command_request({
+            mode: "reminder",
+            account_id: viewer_email.account_id,
+            email_id: viewer_email.id,
+            thread_id: viewer_email.thread_id,
+          });
+          set_command_open(true);
+          rpc.request(messages.reminders_list, { account_id: viewer_email.account_id })
+            .then((items) => {
+              const found = (items as ReminderWire[]).find(
+                (item) => item.email_id === viewer_email.id || (viewer_email.thread_id && item.thread_id === viewer_email.thread_id),
+              );
+              if (found) {
+                set_command_request((prev) =>
+                  prev && prev.mode === "reminder" && prev.email_id === viewer_email.id
+                    ? { ...prev, reminder_id: found.id }
+                    : prev,
+                );
+              }
+            })
+            .catch(() => {});
+          return;
+        }
         case "prev-email":
           on_prev_email_ref.current?.();
           return;
@@ -312,7 +402,8 @@ export function use_commands(options: UseCommandsOptions = {}) {
         case "mark_phishing":
         case "archive":
         case "delete": {
-          const email = base_surface === "viewer" ? viewer_email_ref.current : emails[sel];
+          const selected = rows[sel];
+          const email = base_surface === "viewer" ? viewer_email_ref.current : selected ? row_email(selected, emails_by_folder_ref.current) : null;
           if (!email) return;
           const resolved = action === "mark_spam" && email.folder === "spam" ? "not_spam" : action;
           const value =
@@ -350,6 +441,11 @@ export function use_commands(options: UseCommandsOptions = {}) {
           if (!settings_open) set_palette_open((v) => !v);
           return;
         default:
+          if (action.startsWith("goto-view:")) {
+            set_active_view_id(action.slice("goto-view:".length));
+            set_selection(-1);
+            return;
+          }
           console.log("[use_commands]", { event: "action", surface: base_surface, id: action });
       }
     };
@@ -371,7 +467,15 @@ export function use_commands(options: UseCommandsOptions = {}) {
         }
       }
 
-      const command = commands.find(
+      const view_command = build_view_command(views_enabled, visible_views);
+      const effective_commands = [
+        build_settings_command((options.scheduled_count ?? 0) > 0),
+        build_reload_command((options.reminders_count ?? 0) > 0),
+        ...(view_command ? [view_command] : []),
+        ...commands,
+      ];
+
+      const command = effective_commands.find(
         (c) =>
           (c.surface === "any" || c.surface === surface) &&
           (c.key === e.key || c.alt_keys?.includes(e.key)) &&
@@ -418,7 +522,7 @@ export function use_commands(options: UseCommandsOptions = {}) {
       window.removeEventListener("keydown", on_keydown, true);
       window.removeEventListener("blur", on_blur);
     };
-  }, [compose.phase, current_view, current_thread_view, settings_open, palette_open]);
+  }, [compose.phase, current_view, current_thread_view, settings_open, palette_open, views_enabled, visible_views, options.scheduled_count, options.reminders_count]);
 
   const execute = useCallback((id: string) => {
     execute_ref.current(id);

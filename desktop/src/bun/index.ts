@@ -58,6 +58,9 @@ const bunRPC = setup_rpc(() => win, (v) => { quitAction = v; });
 import { setup_menu } from "./setup/menu";
 setup_menu(() => win, url);
 
+import { setup_shortcuts } from "./setup/shortcuts";
+setup_shortcuts(() => win);
+
 function create_window(): BrowserWindow {
 	const saved = resolve_saved_window_state();
 	win = new BrowserWindow({
@@ -97,4 +100,3 @@ if (relaunch_from) {
 
 import { setup_tray } from "./setup/tray";
 setup_tray(() => win, create_window, () => quitAction, start_in_tray);
-

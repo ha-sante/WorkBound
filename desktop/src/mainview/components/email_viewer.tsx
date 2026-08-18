@@ -1,29 +1,26 @@
 const DEBUG = false;
+const META_COMPENSATION_DELAY_MS = 220;
 
 import { useState, useEffect, useRef, memo } from "react";
 import { Download } from "lucide-react";
-import { IconFile, IconFileTypePdf, IconPhoto, IconFileTypeTxt, IconFileSpreadsheet, IconZip, IconMarkdown, IconFileTypeJs, IconFileTypeCss, IconFileTypeHtml, IconFileMusic, IconVideo, IconCode } from "@tabler/icons-react";
-import { useSetAtom } from "jotai";
-import { currentMailViewAtom, savedFileToastAtom } from "../state";
+import {
+  IconFile, IconFileTypePdf, IconPhoto, IconFileTypeTxt, IconFileSpreadsheet, IconZip, IconMarkdown,
+  IconFileTypeJs, IconFileTypeCss, IconFileTypeHtml, IconFileMusic, IconVideo, IconCode
+} from "@tabler/icons-react";
+import { useAtomValue, useSetAtom } from "jotai";
+import { currentMailViewAtom, mail_body_cache_atom, savedFileToastAtom } from "../state";
 import { messages } from "@/shared/rpc_messages";
-import { EmailBodyIFrame } from "./email_body_iframe";
-import { format_date_full } from "@/shared/datetime";
 import { rpc } from "../rpc";
-
-const emailCache = new Map<string, { email: EmailRowWire; attachments: AttachmentWire[] }>();
+import MailMeta from "./mail_meta";
+import MailBody from "./mail_body";
+import { format_file_size } from "../utils/mail_display_utils";
+import { cache_mail_body, mail_body_cache_key, touch_mail_body_cache } from "../hooks/utils/mail_body_cache";
 
 type Props = {
   email: EmailPreviewWire;
   onClose?: () => void;
   onOverflowChange?: (overflowPx: number) => void;
 };
-
-function format_size(bytes: number | null): string {
-  if (bytes === null || bytes === undefined) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function attachment_icon(mime_type: string | null) {
   const m = mime_type ?? "";
@@ -44,109 +41,106 @@ function attachment_icon(mime_type: string | null) {
 
 function EmailViewer({ email, onClose, onOverflowChange }: Props) {
   const setCurrentView = useSetAtom(currentMailViewAtom);
+  const body_cache = useAtomValue(mail_body_cache_atom);
+  const set_body_cache = useSetAtom(mail_body_cache_atom);
   const [fullEmail, setFullEmail] = useState<EmailRowWire | null>(null);
   const [attachments, setAttachments] = useState<AttachmentWire[]>([]);
   const [bodyLoading, setBodyLoading] = useState(false);
   const [metaHidden, setMetaHidden] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const setSavedFileToast = useSetAtom(savedFileToastAtom);
-  const prevIdRef = useRef<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickyRef = useRef<HTMLDivElement>(null);
   const metaRef = useRef<HTMLDivElement>(null);
-  const loadStartRef = useRef<number>(0);
 
   useEffect(() => {
     const id = email.id;
-    if (id === prevIdRef.current) return;
-    prevIdRef.current = id;
+    let active = true;
 
     const label = `email_load_${id.slice(0, 8)}`;
     console.time(label);
     setMetaHidden(false);
 
-    const cached = emailCache.get(id);
+    const cache_key = mail_body_cache_key(email.account_id, id);
+    const cached = body_cache.entries[cache_key];
     if (cached) {
       console.timeLog(label, 'cache hit');
+      setBodyLoading(false);
       setFullEmail(cached.email);
       setAttachments(cached.attachments);
+      set_body_cache((prev) => touch_mail_body_cache(prev, cache_key));
       setCurrentView(prev => prev?.email?.id === id ? { ...prev, fullEmail: cached.email } : prev);
       console.timeEnd(label);
-      return;
+      return () => { active = false; };
     }
 
     console.timeLog(label, 'no cache, start fetch');
     setBodyLoading(true);
-    loadStartRef.current = performance.now();
+    const load_start = performance.now();
 
-    rpc.request(messages.mail_get, { id })
-      .then((data: unknown) => {
-        const elapsed = performance.now() - loadStartRef.current;
-        console.timeLog(label, `RPC done in ${elapsed.toFixed(0)}ms`);
-        const result = data as MailGetResponse;
-        if (result.email) emailCache.set(id, { email: result.email, attachments: result.attachments });
-        console.timeLog(label, 'set fullEmail');
-        setFullEmail(result.email);
-        setAttachments(result.attachments);
-        setCurrentView(prev => prev?.email?.id === id ? { ...prev, fullEmail: result.email } : prev);
-      })
-      .catch((e: unknown) => {
-        console.error(`${label} mail:get failed`, e);
-        setFullEmail(null);
-        setAttachments([]);
-        setCurrentView(prev => prev?.email?.id === id ? { ...prev, fullEmail: null } : prev);
-      })
-      .finally(() => {
-        console.timeLog(label, 'bodyLoading=false');
-        setBodyLoading(false);
-        console.timeEnd(label);
-      });
-  }, [email.id, setCurrentView]);
+    rpc.request(messages.mail_get, { id }).then((data: unknown) => {
+      if (!active) return;
+      const elapsed = performance.now() - load_start;
+      console.timeLog(label, `RPC done in ${elapsed.toFixed(0)}ms`);
+      const result = data as MailGetResponse;
+      if (result.email) {
+        set_body_cache((prev) => cache_mail_body(prev, email.account_id, result.email!, result.attachments));
+      }
+      console.timeLog(label, 'set fullEmail');
+      setFullEmail(result.email);
+      setAttachments(result.attachments);
+      setCurrentView(prev => prev?.email?.id === id ? { ...prev, fullEmail: result.email } : prev);
+    }).catch((e: unknown) => {
+      if (!active) return;
+      console.error(`${label} mail:get failed`, e);
+      setFullEmail(null);
+      setAttachments([]);
+      setCurrentView(prev => prev?.email?.id === id ? { ...prev, fullEmail: null } : prev);
+    }).finally(() => {
+      if (!active) return;
+      console.timeLog(label, 'bodyLoading=false');
+      setBodyLoading(false);
+      console.timeEnd(label);
+    });
+
+    return () => { active = false; };
+  }, [email.id, email.account_id, setCurrentView, set_body_cache]);
 
   useEffect(() => {
+    // animation of the top bar header - some code for consistency sake.
     const el = bodyRef.current;
     if (!el) return;
-    const label = `email_scroll_${email.id.slice(0, 8)}`;
-    let lastY = el.scrollTop;
-    let hidden = false;
-    let scrollCount = 0;
-    let compTimer: ReturnType<typeof setTimeout> | null = null;
-    const compensate_meta = (dH: number, dir: 1 | -1) => {
-      if (compTimer) clearTimeout(compTimer);
-      compTimer = setTimeout(() => {
-        compTimer = null;
+    let last_scroll_top = el.scrollTop;
+    let meta_hidden = false;
+    let compensation_timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule_compensation = (height: number, direction: 1 | -1) => {
+      if (compensation_timer) clearTimeout(compensation_timer);
+      compensation_timer = setTimeout(() => {
+        compensation_timer = null;
         const max = el.scrollHeight - el.clientHeight;
-        el.scrollTop = Math.max(0, Math.min(max, el.scrollTop + dir * dH));
-      }, 220);
+        el.scrollTop = Math.max(0, Math.min(max, el.scrollTop + direction * height));
+      }, META_COMPENSATION_DELAY_MS);
     };
-    const onScroll = () => {
-      scrollCount++;
-      const y = el.scrollTop;
-      if (scrollCount <= 3 || scrollCount % 20 === 0) {
-        DEBUG && console.log(`[${label}] scroll #${scrollCount} top=${y} lastY=${lastY} hidden=${hidden} scrollH=${el.scrollHeight} clientH=${el.clientHeight}`);
-      }
-      if (y > lastY && y > 60) {
-        if (!hidden) {
-          hidden = true;
-          const dH = metaRef.current?.getBoundingClientRect().height ?? 0;
-          setMetaHidden(true);
-          if (dH > 0) compensate_meta(dH, 1);
-        }
-      } else if (y < lastY && y < 40) {
-        if (hidden) {
-          hidden = false;
-          const dH = metaRef.current?.scrollHeight ?? 0;
-          setMetaHidden(false);
-          if (dH > 0) compensate_meta(dH, -1);
-        }
-      }
-      lastY = y;
+
+    const update_meta_visibility = (hidden: boolean) => {
+      if (hidden === meta_hidden) return;
+      const height = hidden ? metaRef.current?.getBoundingClientRect().height ?? 0
+        : metaRef.current?.scrollHeight ?? 0;
+      meta_hidden = hidden;
+      setMetaHidden(hidden);
+      if (height > 0) schedule_compensation(height, hidden ? 1 : -1);
     };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      if (compTimer) clearTimeout(compTimer);
+
+    const on_scroll = () => {
+      const scroll_top = el.scrollTop;
+      if (scroll_top > last_scroll_top && scroll_top > 60) update_meta_visibility(true);
+      if (scroll_top < last_scroll_top && scroll_top < 40) update_meta_visibility(false);
+      last_scroll_top = scroll_top;
     };
+
+    el.addEventListener("scroll", on_scroll, { passive: true });
+    return () => { el.removeEventListener("scroll", on_scroll); if (compensation_timer) clearTimeout(compensation_timer); };
   }, [email.id]);
 
   const download_attachment = async (att: AttachmentWire) => {
@@ -170,15 +164,12 @@ function EmailViewer({ email, onClose, onOverflowChange }: Props) {
     }
   };
 
-
-
   useEffect(() => {
     if (fullEmail?.body_html) {
-      console.timeLog(`email_load_${email.id.slice(0, 8)}`, `iframe rendering (body_html length=${fullEmail.body_html.length})`);
+      DEBUG && console.log(`[email:${email.id.slice(0, 8)}] iframe body ${fullEmail.body_html.length}`);
     }
-  });
+  }, [email.id, fullEmail?.body_html]);
 
-  const hasFrom = email.from_name || email.from_address;
   const showMeta = fullEmail?.to || fullEmail?.cc || fullEmail?.sent_at;
 
   return (
@@ -227,65 +218,21 @@ function EmailViewer({ email, onClose, onOverflowChange }: Props) {
               maxHeight: metaHidden ? 0 : 200,
               opacity: metaHidden ? 0 : 1,
             }}>
-            <div className="px-6 pt-1 pb-3 space-y-1 text-xs">
-              <div className="flex overflow-hidden">
-                <span className="text-text-secondary w-16 shrink-0 text-xs">From</span>
-                <span className="text-text-primary truncate text-xs flex-1 min-w-0">
-                  {hasFrom ? `${email.from_name ? `${email.from_name} <${email.from_address}>` : email.from_address}` : "—"}
-                </span>
-              </div>
-              {showMeta ? (
-                <>
-                  <div className="flex overflow-hidden">
-                    <span className="text-text-secondary w-16 shrink-0 text-xs">To</span>
-                    <span className="text-text-primary truncate text-xs flex-1 min-w-0">{fullEmail!.to || "—"}</span>
-                  </div>
-                  {fullEmail!.cc && (
-                    <div className="flex overflow-hidden">
-                      <span className="text-text-secondary w-16 shrink-0 text-xs">CC</span>
-                      <span className="text-text-primary truncate text-xs flex-1 min-w-0">{fullEmail!.cc}</span>
-                    </div>
-                  )}
-                  <div className="flex overflow-hidden">
-                    <span className="text-text-secondary w-16 shrink-0 text-xs">Date</span>
-                    <span className="text-text-primary text-xs">{format_date_full(fullEmail!.sent_at || fullEmail!.received_at)}</span>
-                  </div>
-                </>
-              ) : (
-                <div className="flex overflow-hidden">
-                  <span className="text-text-secondary w-16 shrink-0 text-xs">To</span>
-                  <span className="text-text-secondary italic text-xs">Loading...</span>
-                </div>
-              )}
-            </div>
+            <MailMeta mail={email} loading={!showMeta} />
           </div>
         </div>
       </div>
 
       {/* email body */}
-      <div className="!rounded-xl !overflow-hidden">
-        {fullEmail?.body_html ? (
-          <EmailBodyIFrame
-            html={fullEmail.body_html}
-            email_id={email.id}
-            account_id={email.account_id}
-            scrollContainerRef={bodyRef}
-            onOverflowChange={onOverflowChange}
-          />
-        ) : fullEmail?.body_text ? (
-          <pre className="text-sm text-text-primary whitespace-pre-wrap font-sans leading-relaxed px-6 py-4">
-            {fullEmail.body_text}
-          </pre>
-        ) : bodyLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-5 h-5 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : (
-          <div className="flex items-center justify-center py-20">
-            <p className="text-sm text-text-secondary italic">No body content</p>
-          </div>
-        )}
-      </div>
+      <MailBody
+        html={fullEmail?.body_html}
+        text={fullEmail?.body_text}
+        email_id={email.id}
+        account_id={email.account_id}
+        loading={bodyLoading}
+        scrollContainerRef={bodyRef}
+        onOverflowChange={onOverflowChange}
+      />
 
       {/* attachments */}
       <div>
@@ -308,7 +255,7 @@ function EmailViewer({ email, onClose, onOverflowChange }: Props) {
                     <div className="min-w-0 flex-1 leading-tight">
                       <p className="text-text-primary font-medium truncate text-[12px]">{att.filename}</p>
                       {att.size !== null && att.size !== undefined && (
-                        <p className="text-text-secondary text-[10px] mt-[0.2]">{format_size(att.size)}</p>
+                        <p className="text-text-secondary text-[10px] mt-[0.2]">{format_file_size(att.size)}</p>
                       )}
                     </div>
                     <button

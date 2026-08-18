@@ -11,6 +11,7 @@ import { resolve_label_id } from "../db/labels";
 import { get_model_input_tokens } from "./providers";
 import { list_assigned_email_ids } from "../db/auto_label_assignments";
 import { insert_outbox } from "../db/outbox";
+import { bulk_update_email_labels } from "../db/emails";
 import { outbox_commands } from "../../shared/outbox_commands";
 
 export type ClassifyEmail = {
@@ -327,6 +328,7 @@ function enqueue_reconcile_batches(params: {
   }
 
   for (const group of by_add_remove.values()) {
+    apply_local_label_update(account_id, group.email_ids, group.add_label_ids, group.remove_label_ids);
     for (const ids of chunk_array(group.email_ids, 1000)) {
       insert_outbox({
         id: crypto.randomUUID(),
@@ -346,6 +348,28 @@ function enqueue_reconcile_batches(params: {
   }
 
   return matches_count;
+}
+
+function apply_local_label_update(account_id: string, email_ids: string[], add_label_ids: string[], remove_label_ids: string[]): void {
+  if (email_ids.length === 0) return;
+  const rows = getDb()
+    .select({ id: emails.id, labels: emails.labels, classification_labels: emails.classification_labels })
+    .from(emails)
+    .where(and(eq(emails.account_id, account_id), inArray(emails.id, email_ids)))
+    .all();
+  const remove_set = new Set(remove_label_ids);
+  bulk_update_email_labels(rows.map((row) => {
+    let current: string[] = [];
+    try {
+      current = JSON.parse(row.labels ?? "[]");
+    } catch { /* unparseable labels treated as empty */ }
+    const filtered = current.filter((label_id) => !remove_set.has(label_id));
+    return {
+      id: row.id,
+      labels: JSON.stringify([...new Set([...filtered, ...add_label_ids])]),
+      classification_labels: JSON.stringify(add_label_ids),
+    };
+  }));
 }
 
 export type ClassifyAndEnqueueOpts = {

@@ -1,5 +1,5 @@
 import { resolve_with_chrono } from "./chrono_bridge";
-import { cand, epoch_list_tokens, next_trio, number_ordinal_candidates, recommendation_candidates, safe_epoch_tokens, TRIO_RULE, best_rule_match } from "./recommendations";
+import { cand, epoch_list_tokens, next_month_day_candidates, next_trio, number_ordinal_candidates, recommendation_candidates, safe_epoch_tokens, TRIO_RULE, best_rule_match } from "./recommendations";
 import { FILLER_WORDS, relative_day_token, relative_day_ts, weekday_prefix_token } from "./tokens";
 import { humanize_time, next_weekday_ts } from "./time_math";
 
@@ -15,6 +15,9 @@ export function parse_schedule_candidates(input: string): ScheduleCandidate[] {
   const ctx = build_context(input);
   if (!ctx) return [];
   if (epoch_list_tokens(ctx.tokens)) return next_trio(ctx.now);
+
+  const next_month_day = next_month_day_candidates(ctx.tokens, ctx.now);
+  if (next_month_day.length > 0) return next_month_day;
 
   const chrono_matches = resolve_with_chrono(ctx);
   return chrono_matches.length > 0 ? chrono_matches : fallback_candidates(ctx);

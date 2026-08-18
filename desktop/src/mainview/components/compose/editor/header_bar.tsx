@@ -1,10 +1,10 @@
 import { useAtomValue, useSetAtom } from "jotai";
-import { currentMailComposeAtom, currentThreadViewAtom } from "../../../state";
+import { composeMetaAtom, currentThreadViewAtom } from "../../../state";
 
 function ComposeHeader() {
-  const composeState = useAtomValue(currentMailComposeAtom);
+  const composeState = useAtomValue(composeMetaAtom);
   const currentThreadView = useAtomValue(currentThreadViewAtom);
-  const setComposeState = useSetAtom(currentMailComposeAtom);
+  const setComposeState = useSetAtom(composeMetaAtom);
 
   return (
     <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100 shrink-0">

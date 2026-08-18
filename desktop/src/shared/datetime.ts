@@ -33,6 +33,12 @@ export function format_date(dateStr: string | null): string {
   return d.toLocaleDateString(undefined, DATE_SHORT) + " " + d.toLocaleTimeString(undefined, TIME_12_PADDED);
 }
 
+export function format_date_compact(dateStr: string | null): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, DATE_SHORT) + ", " + d.toLocaleTimeString(undefined, TIME_12);
+}
+
 export function format_date_full(dateStr: string | null): string {
   if (!dateStr) return "";
   return new Date(dateStr).toLocaleString(undefined, {

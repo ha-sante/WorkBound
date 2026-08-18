@@ -4,7 +4,6 @@ import { messages } from "../../shared/rpc_messages";
 import { logger } from "../utils/logger";
 import { schedule_retry, cancel_retry } from "../utils/retry";
 import { InvalidGrantError } from "../providers/gmail/utils";
-import { show_notifications_for_new_emails } from "../providers/gmail/notifications";
 import { is_body_cache_active, cache_email_bodies } from "./caches/body_cache";
 import { sync_new_email_attachments } from "./mail_attachments_sync";
 import { apply_auto_labels_to_new_emails } from "../intelligence/new_mail";
@@ -257,8 +256,7 @@ export async function sync_latest_emails(account_id: string) {
       const newIds = result.newIds ?? [];
       if (newIds.length > 0) {
         void sync_new_email_attachments(account_id, newIds);
-        apply_auto_labels_to_new_emails(account_id, newIds);
-        show_notifications_for_new_emails(account_id, newIds);
+        void apply_auto_labels_to_new_emails(account_id, newIds);
       }
     }
 

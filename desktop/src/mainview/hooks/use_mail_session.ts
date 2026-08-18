@@ -1,30 +1,27 @@
-import { useCallback, useMemo, useEffect } from "react";
+import { useCallback, useMemo } from "react";
 import { useAtom } from "jotai";
 import {
   currentMailViewAtom,
-  currentMailComposeAtom,
+  composeMetaAtom,
   currentThreadViewAtom,
-  CLOSED_COMPOSE_STATE,
+  currentScheduledViewAtom,
   create_default_compose_state,
   type ThreadViewEmail,
 } from "../state";
 import { rpc } from "../rpc";
 import { messages } from "@/shared/rpc_messages";
 import { useLiveThread } from "./use_live_thread";
+import { use_compose_editor } from "./use_compose_editor";
 
 export function use_mail_session(emails: EmailPreviewWire[]) {
   const [currentView, setCurrentView] = useAtom(currentMailViewAtom);
-  const [currentCompose, setCurrentCompose] = useAtom(currentMailComposeAtom);
+  const [currentCompose] = useAtom(composeMetaAtom);
   const [currentThreadView, setCurrentThreadView] = useAtom(currentThreadViewAtom);
-  const isBackdropOpen = !!currentView || !!currentThreadView || currentCompose.phase !== "closed";
+  const [currentScheduledView, setCurrentScheduledView] = useAtom(currentScheduledViewAtom);
+  const { open_fresh, close } = use_compose_editor();
+  const isBackdropOpen = !!currentView || !!currentThreadView || !!currentScheduledView || currentCompose.phase !== "closed";
 
   useLiveThread();
-
-  useEffect(() => {
-    if (currentThreadView) {
-      setCurrentCompose(CLOSED_COMPOSE_STATE);
-    }
-  }, [currentThreadView?.thread_id]);
 
   const currentIdx = useMemo(
     () => {
@@ -42,14 +39,15 @@ export function use_mail_session(emails: EmailPreviewWire[]) {
 
   const handleCompose = useCallback(() => {
     setCurrentView(null);
-    setCurrentCompose(create_default_compose_state("new"));
-  }, [setCurrentView, setCurrentCompose]);
+    open_fresh(create_default_compose_state("new"));
+  }, [setCurrentView, open_fresh]);
 
   const handle_close_viewer = useCallback(() => {
     setCurrentView(null);
     setCurrentThreadView(null);
-    setCurrentCompose(CLOSED_COMPOSE_STATE);
-  }, [setCurrentView, setCurrentThreadView, setCurrentCompose]);
+    setCurrentScheduledView(null);
+    close();
+  }, [setCurrentView, setCurrentThreadView, setCurrentScheduledView, close]);
 
   const handle_prev_email = useCallback(() => {
     if (currentThreadView) {
@@ -78,7 +76,7 @@ export function use_mail_session(emails: EmailPreviewWire[]) {
       const te = currentThreadView.emails[currentThreadView.activeIndex];
       if (!te) return;
       const compose = (fullEmail: EmailRowWire | null) =>
-        setCurrentCompose(create_default_compose_state(mode, te.email, fullEmail));
+        open_fresh(create_default_compose_state(mode, te.email, fullEmail));
       if (te.fullEmail) {
         compose(te.fullEmail);
         return;
@@ -89,9 +87,9 @@ export function use_mail_session(emails: EmailPreviewWire[]) {
       return;
     }
     if (currentView?.email) {
-      setCurrentCompose(create_default_compose_state(mode, currentView.email, currentView.fullEmail));
+      open_fresh(create_default_compose_state(mode, currentView.email, currentView.fullEmail));
     }
-  }, [currentThreadView, currentView, setCurrentCompose]);
+  }, [currentThreadView, currentView, open_fresh]);
 
   const handleSelectEmail = useCallback((email: EmailPreviewWire) => {
     console.time(`email_open_${email.id.slice(0, 8)}`);
@@ -99,7 +97,7 @@ export function use_mail_session(emails: EmailPreviewWire[]) {
 
     if (email.thread_message_count && email.thread_message_count > 1 && email.thread_id) {
       setCurrentView(null);
-      setCurrentCompose(CLOSED_COMPOSE_STATE);
+      close();
       rpc.request(messages.thread_previews, { thread_id: email.thread_id }).then((previews: EmailPreviewWire[]) => {
         const threadEmails = previews.map((p: EmailPreviewWire) => ({ email: p, fullEmail: null }));
         const activeIndex = threadEmails.findIndex((te: ThreadViewEmail) => te.email.id === email.id);
@@ -144,23 +142,23 @@ export function use_mail_session(emails: EmailPreviewWire[]) {
             };
             setCurrentView(null);
             setCurrentThreadView(null);
-            setCurrentCompose(create_default_compose_state(email.draft_mode ?? "new", origPreview, res.email, email.id));
+            open_fresh(create_default_compose_state(email.draft_mode ?? "new", origPreview, res.email, email.id));
             console.timeEnd(`email_open_${email.id.slice(0, 8)}`);
           }
         }).catch(() => {});
       } else {
         setCurrentView(null);
         setCurrentThreadView(null);
-        setCurrentCompose(create_default_compose_state(email.draft_mode ?? "new", email, null, email.id));
+        open_fresh(create_default_compose_state(email.draft_mode ?? "new", email, null, email.id));
         console.timeEnd(`email_open_${email.id.slice(0, 8)}`);
       }
     } else {
       setCurrentView({ email, fullEmail: null });
       setCurrentThreadView(null);
-      setCurrentCompose(CLOSED_COMPOSE_STATE);
+      close();
       console.timeEnd(`email_open_${email.id.slice(0, 8)}`);
     }
-  }, [setCurrentView, setCurrentCompose, setCurrentThreadView]);
+  }, [setCurrentView, open_fresh, setCurrentThreadView]);
 
   return {
     currentView,

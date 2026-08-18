@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { ChevronDown } from "lucide-react";
-import { accountContactsAtom, currentMailComposeAtom } from "../../../state";
+import { accountContactsAtom, composeMetaAtom } from "../../../state";
 import { find_contact_by_email } from "../../../utils/contacts";
 import { messages } from "@/shared/rpc_messages";
 import { rpc } from "../../../rpc";
@@ -13,8 +13,8 @@ type Props = {
 function ComposeFromField({ triggerLocalSave }: Props) {
   const accountContacts = useAtomValue(accountContactsAtom);
   const setAccountContacts = useSetAtom(accountContactsAtom);
-  const composeState = useAtomValue(currentMailComposeAtom);
-  const setComposeState = useSetAtom(currentMailComposeAtom);
+  const composeState = useAtomValue(composeMetaAtom);
+  const setComposeState = useSetAtom(composeMetaAtom);
   const from_address = composeState.from_address;
   const is_domain_match = composeState.is_domain_match;
   const current = find_contact_by_email(accountContacts, from_address);

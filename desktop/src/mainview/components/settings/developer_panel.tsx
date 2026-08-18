@@ -7,10 +7,10 @@ import { Row, format_size } from "./row";
 import { ConfigRow } from "./config_row";
 import { useConfig } from "../../hooks/use_config";
 import { useOutboxItems } from "../../hooks/use_outbox_items";
-import type { SyncEngineState } from "../../hooks/sync_state";
+import type { SyncEngineState } from "../../hooks/utils/sync_state";
 import { rpc } from "../../rpc";
 import { format_date, format_date_full } from "@/shared/datetime";
-import { percent_progress } from "@/mainview/utils/percent";
+import { percent_progress } from "@/mainview/utils/format_number";
 import { workbound_config } from "@/shared/config";
 import { WorkboundedBadge } from "./workbounded_badge";
 

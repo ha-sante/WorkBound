@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { currentMailComposeAtom, alertToastAtom } from "../../../state";
+import { composeMetaAtom, alertToastAtom } from "../../../state";
 import { messages } from "@/shared/rpc_messages";
 import { file_to_base64 } from "../../../utils/file";
 import { SOFT_LIMIT } from "../editor/constants";
@@ -11,8 +11,8 @@ type UseAttachmentsParams = {
 };
 
 export function useAttachments({ trigger_local_save }: UseAttachmentsParams) {
-  const composeState = useAtomValue(currentMailComposeAtom);
-  const setComposeState = useSetAtom(currentMailComposeAtom);
+  const composeState = useAtomValue(composeMetaAtom);
+  const setComposeState = useSetAtom(composeMetaAtom);
   const setAlertToast = useSetAtom(alertToastAtom);
 
   const total_attachments_size = useMemo(

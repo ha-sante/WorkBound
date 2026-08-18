@@ -1,14 +1,14 @@
 import { useCallback } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { currentMailComposeAtom } from "../../../state";
+import { composeMetaAtom } from "../../../state";
 
 type Props = {
   triggerLocalSave: () => void;
 };
 
 function ComposeSubjectField({ triggerLocalSave }: Props) {
-  const composeState = useAtomValue(currentMailComposeAtom);
-  const setComposeState = useSetAtom(currentMailComposeAtom);
+  const composeState = useAtomValue(composeMetaAtom);
+  const setComposeState = useSetAtom(composeMetaAtom);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setComposeState(prev => ({ ...prev, subject: e.target.value }));

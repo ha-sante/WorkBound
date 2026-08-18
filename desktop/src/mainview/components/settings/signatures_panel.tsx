@@ -19,7 +19,7 @@ export function SignaturesPanel({ account }: { account: AccountRowWire | null })
 
   const [templates, setTemplates] = useState<SignatureTemplate[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<SignatureTemplate>({ id: "", account_id: account.id, name: "", body: "" });
+  const [draft, setDraft] = useState<SignatureTemplate>({ id: "", account_id: account?.id ?? "", name: "", body: "" });
 
   useEffect(() => {
     if (!globalTemplates.length && !globalAliases.length) return;
@@ -34,6 +34,8 @@ export function SignaturesPanel({ account }: { account: AccountRowWire | null })
     e.preventDefault();
     rpc.request(messages.context_menu_show, { kind: "link", url, x: 0, y: 0 });
   }, []);
+
+  if (!account) return <div className="p-6 text-sm text-text-secondary">No account selected.</div>;
 
   const handleSaveTemplate = async () => {
     if (!draft.name.trim()) return;

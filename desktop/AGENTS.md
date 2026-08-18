@@ -1,4 +1,9 @@
 # Code formatting requirements:
+File Naming:
+1. Use lowercase filenames for source files.
+2. Use snake_case for multiword filenames.
+3. Match import paths to filename casing exactly; Linux filesystems are case-sensitive.
+
 Function Declarations:
 1. Always for all functions - use snakecase for the function names.
 2. Do not create multiline function name declarations 

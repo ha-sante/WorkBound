@@ -2,10 +2,11 @@ const DEBUG = false;
 
 import { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { useSetAtom, useAtomValue } from "jotai";
-import { clientDraftsAtom, draftMutexAtom, draftCommittedPayloadAtom, accountContactsAtom, emailsByFolderAtom, currentMailComposeAtom, composeMailBodyAtom, composeDiscardAtom } from "../../../state";
+import { clientDraftsAtom, draftMutexAtom, draftCommittedPayloadAtom, accountContactsAtom, emailsByFolderAtom, composeMetaAtom, composeBodyAtom, composeDiscardAtom } from "../../../state";
 import { messages } from "@/shared/rpc_messages";
 import { outbox_commands } from "@/shared/outbox_commands";
 import { parse_email_string } from "../editor/contact_input";
+import { quote_text_to_html, strip_quote_pill } from "../../../utils/quote";
 import { rpc } from "../../../rpc";
 
 function has_draft_content(snap: ReturnType<typeof snapshot>): boolean {
@@ -19,7 +20,7 @@ function has_draft_content(snap: ReturnType<typeof snapshot>): boolean {
   );
 }
 
-function snapshot(s: MailComposeState, b: ComposeMailBody) {
+function snapshot(s: ComposeMeta, b: ComposeBody) {
   const typedTo = s.toInput.trim() ? parse_email_string(s.toInput) : [];
   const typedCc = s.ccInput.trim() ? parse_email_string(s.ccInput) : [];
   const typedBcc = s.bccInput.trim() ? parse_email_string(s.bccInput) : [];
@@ -82,15 +83,15 @@ export function useDraftEmail(params: UseDraftEmailParams) {
   const loaded_quote_text_ref = useRef(loadedQuoteText);
   loaded_quote_text_ref.current = loadedQuoteText;
 
-  const composeState = useAtomValue(currentMailComposeAtom);
+  const composeState = useAtomValue(composeMetaAtom);
   const compose_ref = useRef(composeState);
   compose_ref.current = composeState;
 
-  const bodyState = useAtomValue(composeMailBodyAtom);
+  const bodyState = useAtomValue(composeBodyAtom);
   const body_ref = useRef(bodyState);
   body_ref.current = bodyState;
 
-  const setBody = useSetAtom(composeMailBodyAtom);
+  const setBody = useSetAtom(composeBodyAtom);
   const setDrafts = useSetAtom(clientDraftsAtom);
   const drafts = useAtomValue(clientDraftsAtom);
   const drafts_ref = useRef(drafts);
@@ -390,6 +391,8 @@ export function useDraftEmail(params: UseDraftEmailParams) {
     }));
     if (draft.body_html) {
       if (editorRef.current) editorRef.current.innerHTML = draft.body_html;
+    } else {
+      console.warn("[loadDraft] BUG-2 empty body_html for draft", { draft_id, mode: draft.mode, quote_text: draft.quote_text?.length ?? 0 });
     }
     setBody({
       body_html: draft.body_html || "",
@@ -462,7 +465,7 @@ export function useDraftEmail(params: UseDraftEmailParams) {
     saveTimerRef.current = setTimeout(() => setStatus("loaded"), 500);
   }, [lsSave]);
 
-  const send = useCallback(async (scheduled_at?: number): Promise<SendResult> => {
+  const send = useCallback(async (scheduled_at: number | null, timing: SendTiming): Promise<SendResult> => {
     if (!is_loaded_ref.current) return { ok: false, error: "not_loaded" };
     if (!account_id_ref.current) return { ok: false, error: "no_account" };
 
@@ -475,7 +478,8 @@ export function useDraftEmail(params: UseDraftEmailParams) {
     if (!scheduled_at) setStatus("sending");
 
     const effectiveQuote = loaded_quote_text_ref.current || quote_text_ref.current || "";
-    const fullHtml = effectiveQuote ? snap.body_html + effectiveQuote.replace(/\n/g, "<br>") : snap.body_html;
+    const cleanHtml = strip_quote_pill(snap.body_html);
+    const fullHtml = effectiveQuote ? cleanHtml + quote_text_to_html(effectiveQuote) : cleanHtml;
     const fullText = effectiveQuote ? snap.body_text + "\n" + effectiveQuote : snap.body_text;
 
     if (draft_id_ref.current) {
@@ -496,10 +500,11 @@ export function useDraftEmail(params: UseDraftEmailParams) {
         }).catch(() => {});
       }
 
+      send_enqueued_ref.current = true;
       const { id: outboxId } = await rpc_ref.current.request(messages.outbox_enqueue, {
         account_id: account_id_ref.current,
         command: outbox_commands.send_email,
-        scheduled_at,
+         scheduled_at: scheduled_at ?? undefined,
         payload: JSON.stringify({
           to: snap.to,
           cc: snap.cc || undefined,
@@ -512,6 +517,13 @@ export function useDraftEmail(params: UseDraftEmailParams) {
           attachments: snap.attachments.length > 0 ? snap.attachments : undefined,
           draft_id: draft_id_ref.current,
           original_email_id,
+        }),
+        extras: JSON.stringify({
+          raw_body_html: snap.body_html,
+          raw_body_text: snap.body_text,
+          quote_text: effectiveQuote,
+          undo_enabled: timing.undo_enabled,
+          undo_seconds: timing.undo_enabled ? Math.max(0, timing.undo_seconds) : 0,
         }),
       });
 
@@ -641,7 +653,7 @@ export function useDraftEmail(params: UseDraftEmailParams) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       active_ref.current = false;
-      if (dirty_ref.current && draft_id_ref.current && !discarded_ref.current) {
+      if (dirty_ref.current && draft_id_ref.current && !discarded_ref.current && !send_enqueued_ref.current) {
         const s = compose_ref.current;
         const b = body_ref.current;
         if (s) {

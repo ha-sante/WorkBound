@@ -6,6 +6,7 @@ import { get_connection } from "./connection";
 import { resolve_model } from "./providers";
 import { logger } from "../utils/logger";
 import { error_message } from "../../shared/errors";
+import { show_notifications_for_new_emails } from "../providers/gmail/notifications";
 
 type NewMailRule = {
   kind: AutoLabelRuleKindWire;
@@ -25,27 +26,33 @@ async function classify_new_emails_for_rule(model: LanguageModel, conn: { provid
 }
 
 export async function apply_auto_labels_to_new_emails(account_id: string, email_ids: string[]): Promise<void> {
-  if (email_ids.length === 0) return;
+  try {
+    if (email_ids.length === 0) return;
 
-  const prompts = list_prompts(account_id).filter((p) => p.enabled);
-  const templates = list_templates(account_id).filter((t) => t.enabled);
-  if (prompts.length === 0 && templates.length === 0) return;
+    const prompts = list_prompts(account_id).filter((p) => p.enabled);
+    const templates = list_templates(account_id).filter((t) => t.enabled);
+    if (prompts.length === 0 && templates.length === 0) return;
 
-  const conn = await get_connection();
-  if (!conn) return;
+    const conn = await get_connection();
+    if (!conn) return;
 
-  const model = resolve_model({ path: conn.path, provider: conn.provider, model: conn.model, endpoint: conn.endpoint, apiKey: conn.apiKey });
+    const model = resolve_model({ path: conn.path, provider: conn.provider, model: conn.model, endpoint: conn.endpoint, apiKey: conn.apiKey });
 
-  const rules: NewMailRule[] = [
-    ...prompts.map((p) => ({ kind: "prompt" as const, rule_id: p.id, rule_name: p.name, rule_version: p.version })),
-    ...templates.map((t) => ({ kind: "template" as const, rule_id: t.id, rule_name: t.name, rule_version: t.version })),
-  ];
+    const rules: NewMailRule[] = [
+      ...prompts.map((p) => ({ kind: "prompt" as const, rule_id: p.id, rule_name: p.name, rule_version: p.version })),
+      ...templates.map((t) => ({ kind: "template" as const, rule_id: t.id, rule_name: t.name, rule_version: t.version })),
+    ];
 
-  for (const rule of rules) {
-    try {
-      await classify_new_emails_for_rule(model, conn, account_id, rule, email_ids);
-    } catch (e) {
-      logger.error("intelligence", `new mail auto-label rule ${rule.rule_name} failed: ${error_message(e)}`);
+    for (const rule of rules) {
+      try {
+        await classify_new_emails_for_rule(model, conn, account_id, rule, email_ids);
+      } catch (e) {
+        logger.error("intelligence", `new mail auto-label rule ${rule.rule_name} failed: ${error_message(e)}`);
+      }
     }
+  } catch (e) {
+    logger.error("intelligence", `new mail auto-label setup failed: ${error_message(e)}`);
+  } finally {
+    show_notifications_for_new_emails(account_id, email_ids);
   }
 }

@@ -22,6 +22,7 @@ import signatureHandlers from "./handlers/signatures";
 import draftHandlers from "./handlers/drafts";
 import notesHandlers from "./handlers/notes";
 import filteredViewsHandlers from "./handlers/filtered_views";
+import notificationFiltersHandlers from "./handlers/notification_filters";
 import templatesHandlers from "./handlers/templates";
 import filtersHandlers from "./handlers/filters";
 import labelsHandlers from "./handlers/labels";
@@ -32,6 +33,8 @@ import devHandlers from "./handlers/dev";
 import notificationsHandlers from "./handlers/notifications";
 import appSetupHandlers from "./handlers/app_setup";
 import updatesHandlers from "./handlers/updates";
+import remindersHandlers from "./handlers/reminders";
+import shortcutsHandlers from "./handlers/shortcuts";
 
 import { writeFileSync } from "fs";
 import { join } from "path";
@@ -169,6 +172,7 @@ export const handlers = {
   ...draftHandlers,
   ...notesHandlers,
   ...filteredViewsHandlers,
+  ...notificationFiltersHandlers,
   ...templatesHandlers,
   ...filtersHandlers,
   ...labelsHandlers,
@@ -179,4 +183,6 @@ export const handlers = {
   ...notificationsHandlers,
   ...appSetupHandlers,
   ...updatesHandlers,
+  ...remindersHandlers,
+  ...shortcutsHandlers,
 };

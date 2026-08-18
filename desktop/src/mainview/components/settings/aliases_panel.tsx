@@ -32,10 +32,10 @@ export function AliasesPanel({ account }: { account: AccountRowWire }) {
     setSyncing(true);
     setStatus(null);
     try {
-      const data = await rpc.request(messages.send_as_sync, { account_id: account.id }) as SendAsAliasWire[];
+      const result = await rpc.request(messages.send_as_sync, { account_id: account.id });
+      await fetchAliases();
       if (mountedRef.current) {
-        setAliases(data);
-        setStatus({ type: "success", msg: `Synced ${data.length} alias${data.length === 1 ? "" : "es"}` });
+        setStatus({ type: "success", msg: `Synced ${result.synced} alias${result.synced === 1 ? "" : "es"}` });
       }
     } catch (err) {
       if (mountedRef.current) setStatus({ type: "error", msg: String(err) });

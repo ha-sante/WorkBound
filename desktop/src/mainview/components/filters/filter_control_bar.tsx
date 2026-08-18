@@ -25,6 +25,7 @@ type Props = {
 const FIELD_LABELS: Record<ClientFilterClause["field"], string> = {
   category: "Category",
   label: "Label",
+  is_important: "Important",
   is_unread: "Unread",
   has_attachments: "Has attachments",
   from: "From",
@@ -62,6 +63,12 @@ function clause_summary(clause: ClientFilterClause, maps: {
     const name = is_unread ? "Unread" : "Read";
     if (clause.op === "eq") return name;
     return is_unread ? "Not unread" : "Not read";
+  }
+
+  if (field === "is_important") {
+    const target = clause.value_boolean === true;
+    const name = target ? "Important" : "Not important";
+    return clause.op === "eq" ? name : target ? "Not important" : "Important";
   }
 
   if (field === "has_attachments") {
@@ -113,6 +120,8 @@ function field_to_icon(field: ClientFilterClause["field"]): JSX.Element | null {
       return <Tag size={14} className="text-text-secondary" />;
     case "is_unread":
       return <Inbox size={14} className="text-text-secondary" />;
+    case "is_important":
+      return <Tag size={14} className="text-text-secondary" />;
     case "has_attachments":
       return <Link2 size={14} className="text-text-secondary" />;
     case "from":
@@ -169,7 +178,7 @@ export function FilterControlBar({ selectable_folder, folder, on_folder_change, 
 
   function reset_draft_for(field: ClientFilterClause["field"]) {
     set_draft_field(field);
-    const default_op = field === "date" ? "after" : field === "category" || field === "label" ? "is" : field === "is_unread" || field === "has_attachments" ? "eq" : "contains";
+    const default_op = field === "date" ? "after" : field === "category" || field === "label" ? "is" : field === "is_unread" || field === "is_important" || field === "has_attachments" ? "eq" : "contains";
     set_draft_op(default_op);
     set_draft_value("");
     set_draft_value_boolean(true);
@@ -201,7 +210,7 @@ export function FilterControlBar({ selectable_folder, folder, on_folder_change, 
 
   function allowed_ops_for_field(field: ClientFilterClause["field"]): ClientFilterClause["op"][] {
     if (field === "category" || field === "label") return MEMBERSHIP_OPS;
-    if (field === "is_unread" || field === "has_attachments") return BOOLEAN_OPS;
+    if (field === "is_unread" || field === "is_important" || field === "has_attachments") return BOOLEAN_OPS;
     if (field === "date") return DATE_OPS;
     return TEXT_OPS;
   }
@@ -221,7 +230,7 @@ export function FilterControlBar({ selectable_folder, folder, on_folder_change, 
       return;
     }
 
-    if (draft_field === "is_unread" || draft_field === "has_attachments") {
+    if (draft_field === "is_unread" || draft_field === "is_important" || draft_field === "has_attachments") {
       const clause: ClientFilterClause = {
         id: editing_id ?? make_clause_id(),
         field: draft_field,

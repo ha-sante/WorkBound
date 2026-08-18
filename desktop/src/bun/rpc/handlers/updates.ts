@@ -2,6 +2,7 @@ import { Updater } from "electrobun/bun";
 import { messages } from "../../../shared/rpc_messages";
 import { logger } from "../../utils/logger";
 import { rpc_send } from "../index";
+import { set_update_quit } from "../../setup/tray";
 
 export default {
   [messages.updates_get_status]: async (): Promise<UpdateGetStatusWire> => {
@@ -42,6 +43,7 @@ export default {
   [messages.updates_install]: async () => {
     logger.info("rpc", "updates:install");
     try {
+      set_update_quit();
       await Updater.applyUpdate();
       return { success: true };
     } catch (e) {

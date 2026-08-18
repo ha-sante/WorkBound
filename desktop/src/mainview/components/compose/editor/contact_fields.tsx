@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { currentMailComposeAtom, currentAccountIdAtom } from "../../../state";
+import { composeMetaAtom, currentAccountIdAtom } from "../../../state";
 import { ContactInput, parse_email_string } from "./contact_input";
 import { useContactAutocomplete } from "../hooks/use_contact_autocomplete";
 
@@ -9,8 +9,8 @@ type Props = {
 };
 
 function ComposeContactFields({ triggerLocalSave }: Props) {
-  const setComposeState = useSetAtom(currentMailComposeAtom);
-  const composeState = useAtomValue(currentMailComposeAtom);
+  const setComposeState = useSetAtom(composeMetaAtom);
+  const composeState = useAtomValue(composeMetaAtom);
   const account_id = useAtomValue(currentAccountIdAtom);
 
   const { toContacts, ccContacts, bccContacts, toInput, ccInput, bccInput, showCc, showBcc, mode, email, fullEmail } = composeState;
@@ -43,7 +43,7 @@ function ComposeContactFields({ triggerLocalSave }: Props) {
     const initialTo = email.from_name ? `${email.from_name} <${cleanEmail}>` : cleanEmail;
     const result = parse_email_string(initialTo);
     setComposeState(prev => {
-      const next: Partial<MailComposeState> = {};
+      const next: Partial<ComposeMeta> = {};
       if (result.length > 0) next.toContacts = result;
       if (mode === "reply_all") {
         const rawCc = fullEmail?.cc ?? email.cc;

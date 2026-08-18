@@ -5,18 +5,16 @@ import { MdexEditor } from "./compose/editor/mdex";
 import ReplyPreview from "./compose/editor/reply_preview";
 import AttachmentChips from "./compose/editor/attachment_chips";
 import { SOFT_LIMIT } from "./compose/editor/constants";
-import { messages } from "@/shared/rpc_messages";
 import { useAtomValue } from "jotai";
 import { currentAccountIdAtom } from "../state";
 import { parse_email_string } from "./compose/editor/contact_input";
 import { useAtom, useSetAtom } from "jotai";
-import { alertToastAtom, accountContactsAtom, currentMailComposeAtom, composeMailBodyAtom, composeSaveAtom, compose_actions_atom, signature_templatesAtom, signatureAssignmentsAtom } from "../state";
+import { alertToastAtom, accountContactsAtom, composeMetaAtom, composeBodyAtom, composeSaveAtom, compose_actions_atom, sentToastAtom, composePreviousStateAtom, prefsAtom, signature_templatesAtom, signatureAssignmentsAtom, CLOSED_COMPOSE_STATE, messageToastAtom, command_k_modal_open_atom, command_k_modal_request_atom } from "../state";
 import ComposeHeader from "./compose/editor/header_bar";
 import ComposeFromField from "./compose/editor/from_field";
 import ComposeContactFields from "./compose/editor/contact_fields";
 import ComposeSubjectField from "./compose/editor/subject_field";
 import ComposeActionBar from "./compose/editor/action_bar";
-import ComposeSentStatus from "./compose/editor/sent_status";
 import SendingBar from "./compose/editor/sending_bar";
 import SizeWarning from "./compose/editor/size_warning";
 import ConflictPane from "./compose/editor/conflict_banner";
@@ -24,26 +22,31 @@ import { useDraftEmail } from "./compose/hooks/use_draft_email";
 import { useAttachments } from "./compose/hooks/use_attachments";
 import { findBestAliasMatch } from "../utils/contacts";
 import { build_quote } from "../utils/quote";
-import { rpc } from "../rpc";
+import { pref_keys } from "@/shared/pref_keys";
 
 type Props = {
   onClose: () => void;
+  onCloseAfterSend?: () => void;
   onCompactChange?: (compact: boolean) => void;
 };
 
-function ComposeEditor({ onClose, onCompactChange }: Props) {
+function ComposeEditor({ onClose, onCloseAfterSend, onCompactChange }: Props) {
   const account_id = useAtomValue(currentAccountIdAtom);
-  const [composeState, setComposeState] = useAtom(currentMailComposeAtom);
-  const setBodyState = useSetAtom(composeMailBodyAtom);
+  const prefs = useAtomValue(prefsAtom);
+  const setSentToast = useSetAtom(sentToastAtom);
+  const setComposePreviousState = useSetAtom(composePreviousStateAtom);
+  const [composeState, setComposeState] = useAtom(composeMetaAtom);
+  const setBodyState = useSetAtom(composeBodyAtom);
+  const bodyState = useAtomValue(composeBodyAtom);
   const setAlertToast = useSetAtom(alertToastAtom);
+  const setMessageToast = useSetAtom(messageToastAtom);
   const setComposeSaveAtom = useSetAtom(composeSaveAtom);
   const setComposeActions = useSetAtom(compose_actions_atom);
   const [showPreview, setShowPreview] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
+  const set_command_open = useSetAtom(command_k_modal_open_atom);
+  const set_command_request = useSetAtom(command_k_modal_request_atom);
   const [bodySize, setBodySize] = useState(0);
   const phase = composeState.phase;
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const countdownRef = useRef(50);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const userTypedRef = useRef(false);
 
@@ -83,42 +86,68 @@ function ComposeEditor({ onClose, onCompactChange }: Props) {
       return;
     }
 
-    setComposeState(prev => ({ ...prev, phase: "sending" }));
-    const result = await send();
-
-    if (result.ok) {
-      setComposeState(prev => ({ ...prev, phase: "sent", countdown: 50, outboxId: result.outboxId }));
-      onCompactChange?.(true);
-      countdownRef.current = 50;
-      timerRef.current = setInterval(() => {
-        countdownRef.current -= 1;
-        setComposeState(prev => ({ ...prev, countdown: countdownRef.current }));
-        if (countdownRef.current <= 0) {
-          if (timerRef.current) clearInterval(timerRef.current);
-          timerRef.current = null;
-          onClose();
-        }
-      }, 100);
-    } else {
-      if (result.error === "no_recipient") {
-        setAlertToast({ message: "Recipient required", type: "error" });
+    const undo_enabled = Boolean(prefs[pref_keys.compose_send_undo] ?? true);
+    const undo_sec = Number(prefs[pref_keys.compose_send_undo_seconds] ?? 10);
+    const show_toast = (result: SendResult) => {
+      if (result.ok) {
+        setSentToast(prev => prev && prev.status === "pending"
+          ? { ...prev, status: "sent", outbox_id: result.outboxId }
+          : prev);
+        clearSendFlag();
+      } else {
+        setSentToast(prev => prev && prev.status === "pending"
+          ? { ...prev, status: "failed", error: result.error }
+          : prev);
       }
-      setComposeState(prev => ({ ...prev, phase: "composing" }));
-      onCompactChange?.(false);
-    }
-  }, [send, onClose, onCompactChange]);
+    };
 
-  const handleSendLater = useCallback(async (scheduled_at: number) => {
+    const resultPromise = send(null, { undo_enabled, undo_seconds: undo_sec });
+    setComposePreviousState({
+      meta: composeState,
+      body: {
+        body_html: editorRef.current?.innerHTML || bodyState.body_html || "",
+        body_text: editorRef.current?.innerText || bodyState.body_text || "",
+      },
+    });
+    setSentToast({
+      status: "pending",
+      outbox_id: null,
+      undo_enabled,
+      is_draft: Boolean(composeState.draft_id),
+      mode: composeState.mode,
+      countdown_total: undo_enabled ? Math.max(0, undo_sec) * 10 : 20,
+    });
+    resultPromise.then(show_toast).catch(() => {
+      setSentToast(prev => prev && prev.status === "pending"
+        ? { ...prev, status: "failed", error: "Send failed" }
+        : prev);
+    });
+    onCompactChange?.(true);
+    setComposeState(CLOSED_COMPOSE_STATE);
+    onCloseAfterSend?.();
+  }, [send, composeState, bodyState, prefs, clearSendFlag, onCloseAfterSend, onCompactChange, setSentToast, setComposeState, setComposePreviousState]);
+
+  const handle_schedule_send = useCallback(async (scheduled_at: number) => {
     if (totalEstimatedSizeRef.current > SOFT_LIMIT) return;
-    const result = await send(scheduled_at);
+    const result = await send(scheduled_at, { undo_enabled: false, undo_seconds: 0 });
     if (result.ok) {
-      onClose();
+      setComposePreviousState({
+        meta: composeState,
+        body: {
+          body_html: editorRef.current?.innerHTML || bodyState.body_html || "",
+          body_text: editorRef.current?.innerText || bodyState.body_text || "",
+        },
+      });
+      setMessageToast("Message scheduled");
+      clearSendFlag();
+      setComposeState(CLOSED_COMPOSE_STATE);
+      onCloseAfterSend?.();
     } else {
       if (result.error === "no_recipient") {
         setAlertToast({ message: "Recipient required", type: "error" });
       }
     }
-  }, [send, onClose]);
+  }, [send, composeState, bodyState, clearSendFlag, onCloseAfterSend, setMessageToast, setComposeState, setComposePreviousState]);
 
   const has_only_auto_content = useCallback((editor: HTMLElement | null) => {
     if (!editor) return true;
@@ -153,17 +182,18 @@ function ComposeEditor({ onClose, onCompactChange }: Props) {
   }, [composeState, has_only_auto_content]);
 
   const handleClose = useCallback(async () => {
-    if (showPicker) {
-      setShowPicker(false);
-      return;
-    }
     if (is_empty()) {
       discard();
       return;
     }
     await flush_to_backend();
     onClose();
-  }, [flush_to_backend, onClose, is_empty, showPicker, discard]);
+  }, [flush_to_backend, onClose, is_empty, discard]);
+
+  const open_schedule_picker = useCallback(() => {
+    set_command_request({ mode: "schedule" });
+    set_command_open(true);
+  }, [set_command_open, set_command_request]);
 
   const accountContacts = useAtomValue(accountContactsAtom);
   const signature_templates = useAtomValue(signature_templatesAtom);
@@ -218,29 +248,11 @@ function ComposeEditor({ onClose, onCompactChange }: Props) {
     setComposeSaveAtom({ status: draftStatus, fn: save_draft });
   }, [draftStatus, save_draft, setComposeSaveAtom]);
 
-  const handleUndo = useCallback(() => {
-    clearSendFlag();
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = null;
-    if (composeState.outboxId) {
-      rpc.request(messages.outbox_cancel, { id: composeState.outboxId }).catch(() => { });
-    }
-    setComposeState(prev => ({ ...prev, outboxId: null, phase: "composing", countdown: 50 }));
-    countdownRef.current = 50;
-    onCompactChange?.(false);
-  }, [clearSendFlag, composeState.outboxId, onCompactChange]);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
   const phase_ref = useRef(phase);
   phase_ref.current = phase;
 
-  const latest_actions = useRef({ handleSend, handleSendLater, discard, handle_pick_files, handleClose, setShowPicker, handleUndo });
-  latest_actions.current = { handleSend, handleSendLater, discard, handle_pick_files, handleClose, setShowPicker, handleUndo };
+  const latest_actions = useRef({ handleSend, handle_schedule_send, discard, handle_pick_files, handleClose, open_schedule_picker });
+  latest_actions.current = { handleSend, handle_schedule_send, discard, handle_pick_files, handleClose, open_schedule_picker };
 
   useEffect(() => {
     const register = <A extends unknown[]>(guard: (p: string) => boolean, fn: (...args: A) => void) => (...args: A) => {
@@ -250,17 +262,17 @@ function ComposeEditor({ onClose, onCompactChange }: Props) {
       send: register((p) => p === "composing", () => latest_actions.current.handleSend()),
       discard: register((p) => p === "composing", () => latest_actions.current.discard()),
       attach: register((p) => p === "composing", () => latest_actions.current.handle_pick_files()),
-      close: register((p) => p === "composing" || p === "sent", () => latest_actions.current.handleClose()),
-      send_later: register((p) => p === "composing", () => latest_actions.current.setShowPicker(true)),
-      undo_send: register((p) => p === "sent", () => latest_actions.current.handleUndo()),
-      send_at: register((p) => p === "composing", (ts: number) => latest_actions.current.handleSendLater(ts)),
+      close: register((p) => p === "composing", () => latest_actions.current.handleClose()),
+      send_later: register((p) => p === "composing", () => latest_actions.current.open_schedule_picker()),
+      undo_send: register((p) => p === "composing", () => setSentToast(null)),
+      send_at: register((p) => p === "composing", (ts: number) => latest_actions.current.handle_schedule_send(ts)),
     });
     return () => {
       setComposeActions({
         send: () => {}, discard: () => {}, attach: () => {}, close: () => {}, send_later: () => {}, undo_send: () => {}, send_at: () => {},
       });
     };
-  }, [setComposeActions]);
+  }, [setComposeActions, setSentToast]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -300,7 +312,7 @@ function ComposeEditor({ onClose, onCompactChange }: Props) {
     <div className="h-full flex flex-col">
       <ComposeHeader />
       <SendingBar visible={phase === "sending"} />
-      <div className={`flex-1 flex flex-col min-h-0 relative ${phase === "sent" ? "hidden" : ""}`}>
+      <div className="flex-1 flex flex-col min-h-0 relative">
         <div className="px-6 py-3 shrink-0 space-y-2">
           <ComposeFromField triggerLocalSave={trigger_local_save} />
           <ComposeContactFields triggerLocalSave={trigger_local_save} />
@@ -326,14 +338,11 @@ function ComposeEditor({ onClose, onCompactChange }: Props) {
         <SizeWarning />
         <ComposeActionBar
           onSend={handleSend}
-          onSendLater={handleSendLater}
+          onSendLater={open_schedule_picker}
           onPickFiles={handle_pick_files}
           onClose={handleClose}
-          showPicker={showPicker}
-          onTogglePicker={() => setShowPicker((p) => !p)}
         />
       </div>
-      <ComposeSentStatus onUndo={handleUndo} onClose={onClose} />
     </div>
   );
 }

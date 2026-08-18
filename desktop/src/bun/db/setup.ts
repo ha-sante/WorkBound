@@ -33,6 +33,11 @@ function onetime_migrations(db: Database) {
   ensure_column(db, "outbox", "to_addr TEXT");
   ensure_column(db, "outbox", "subject TEXT");
   ensure_column(db, "outbox", "thread_id TEXT");
+  ensure_column(db, "outbox", "available_at INTEGER");
+  ensure_column(db, "outbox", "attempt_count INTEGER NOT NULL DEFAULT 0");
+  ensure_column(db, "outbox", "next_retry_at INTEGER");
+  ensure_column(db, "outbox", "locked_at INTEGER");
+  ensure_column(db, "outbox", "locked_by TEXT");
   ensure_column(db, "labels", "icon_name TEXT");
 
   // Backfill state extensions
@@ -80,6 +85,31 @@ export function run_setup(db: Database) {
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS notification_filters (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      icon_name TEXT,
+      clauses TEXT NOT NULL DEFAULT '[]',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS reminders (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      email_id TEXT NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+      thread_id TEXT,
+      remind_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reminders_account_status_time
+      ON reminders(account_id, status, remind_at);
 
     CREATE TABLE IF NOT EXISTS threads (
       id TEXT PRIMARY KEY,
@@ -206,11 +236,23 @@ export function run_setup(db: Database) {
       created_at INTEGER NOT NULL,
       sent_at INTEGER,
       scheduled_at INTEGER,
+      available_at INTEGER,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_retry_at INTEGER,
+      locked_at INTEGER,
+      locked_by TEXT,
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_outbox_status_created
       ON outbox(status, created_at);
+
+    UPDATE outbox
+    SET available_at = COALESCE(scheduled_at, created_at)
+    WHERE available_at IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_outbox_status_available_created
+      ON outbox(status, available_at, created_at);
 
     CREATE INDEX IF NOT EXISTS idx_emails_account_folder_received
       ON emails(account_id, folder, received_at);
@@ -246,6 +288,8 @@ export function run_setup(db: Database) {
       body_html_stripped
     );
   `);
+
+  ensure_column(db, "reminders", "notified_at INTEGER");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS send_as_aliases (
@@ -400,6 +444,7 @@ export function run_setup(db: Database) {
   `);
 
   ensure_column(db, "accounts", "has_credentials INTEGER NOT NULL DEFAULT 0");
+  ensure_column(db, "reminders", "notified_at INTEGER");
 
   if (migrate_email_headers(db)) {
     console.log("db: migrated emails.headers -> email_headers table");

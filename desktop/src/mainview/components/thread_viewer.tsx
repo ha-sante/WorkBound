@@ -1,13 +1,15 @@
 import { useEffect, useRef, useMemo, useState, memo } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, Clock, Pencil, Send, X } from "lucide-react";
-import { currentThreadViewAtom } from "../state";
+import { ChevronDown, Clock } from "lucide-react";
+import { currentThreadViewAtom, activeThreadScheduledItemAtom } from "../state";
 import { format_time, format_date } from "@/shared/datetime";
 import { useOutboxItems } from "../hooks/use_outbox_items";
-import { useScheduledActions } from "../hooks/use_scheduled_actions";
 import { parse_send_payload } from "../utils/scheduled_send";
+import { format_file_size } from "../utils/mail_display_utils";
 import EmailViewer from "./email_viewer";
+import MailMeta from "./mail_meta";
+import MailBody from "./mail_body";
 import AvatarImage from "./avatar_image";
 
 type Props = {
@@ -23,7 +25,6 @@ function ThreadViewer({ onActiveCardMove, maxHeightVh, compact }: Props) {
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [hiddenExpanded, setHiddenExpanded] = useState(false);
   const { items: pendingItems } = useOutboxItems({ thread_id: threadView?.thread_id });
-  const { edit, cancel, sendNow } = useScheduledActions();
 
   useEffect(() => {
     onActiveCardMoveRef.current = onActiveCardMove;
@@ -35,14 +36,37 @@ function ThreadViewer({ onActiveCardMove, maxHeightVh, compact }: Props) {
   }, [threadView?.thread_id]);
 
   useEffect(() => {
+    const scheduled_item_id = threadView?.scheduled_item_id;
+    if (!scheduled_item_id || !pendingItems.some((item) => item.id === scheduled_item_id)) return;
+    setExpandedItemId(scheduled_item_id);
+  }, [threadView?.scheduled_item_id, pendingItems]);
+
+  useEffect(() => {
     if (compact) setExpandedItemId(null);
   }, [compact]);
+
+  const setActiveScheduledItem = useSetAtom(activeThreadScheduledItemAtom);
+
+  useEffect(() => {
+    if (!expandedItemId) {
+      setActiveScheduledItem(null);
+      return;
+    }
+    const active = pendingItems.find(
+      (p) => p.id === expandedItemId && p.command === "send_email" && p.scheduled_at && (p.status === "queued" || p.status === "sending"),
+    );
+    setActiveScheduledItem(active ?? null);
+  }, [expandedItemId, pendingItems, setActiveScheduledItem]);
+
+  useEffect(() => {
+    return () => setActiveScheduledItem(null);
+  }, [setActiveScheduledItem]);
 
   if (!threadView) return null;
 
   const handle_card_click = (index: number) => {
     setExpandedItemId(null);
-    setThreadView(prev => prev ? { ...prev, activeIndex: index } : prev);
+    setThreadView(prev => prev ? { ...prev, activeIndex: index, scheduled_item_id: undefined } : prev);
   };
 
   useEffect(() => {
@@ -73,7 +97,7 @@ function ThreadViewer({ onActiveCardMove, maxHeightVh, compact }: Props) {
       container.removeEventListener("scroll", report);
       ro.disconnect();
     };
-  }, [threadView.activeIndex]);
+  }, [threadView.activeIndex, expandedItemId, hiddenExpanded]);
 
   const colors = [
     "text-indigo-500", "text-amber-500", "text-emerald-500", "text-rose-500",
@@ -139,11 +163,11 @@ function ThreadViewer({ onActiveCardMove, maxHeightVh, compact }: Props) {
       <AnimatePresence>
         {!compact && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeInOut" }}
-            className="overflow-hidden flex flex-col items-center gap-1 px-4 pb-3 pt-1">
+            className="flex flex-col items-center gap-1 px-4 pb-3 pt-1">
             <div className="flex items-center justify-center">
               {uniqueSenders.map((sender, i) => (
                 <AvatarImage
@@ -167,8 +191,7 @@ function ThreadViewer({ onActiveCardMove, maxHeightVh, compact }: Props) {
       {hiddenCount > 0 && (
         <button
           onClick={() => setHiddenExpanded(v => !v)}
-          className="flex items-center justify-center gap-1 self-center shrink-0 mb-2 cursor-pointer select-none hover:opacity-80 transition-opacity"
-        >
+          className="flex items-center justify-center gap-1 self-center shrink-0 mb-2 cursor-pointer select-none hover:opacity-80 transition-opacity">
           <ChevronDown size={13} className={`text-white/80 transition-transform duration-200 ${hiddenExpanded ? "rotate-180" : ""}`} />
           <span className="text-xs text-white/90 font-medium">
             {hiddenExpanded
@@ -177,7 +200,7 @@ function ThreadViewer({ onActiveCardMove, maxHeightVh, compact }: Props) {
           </span>
         </button>
       )}
-      <div ref={scrollRef} className="flex flex-col gap-1 w-full overflow-y-auto pb-3" style={{ height: `calc(${maxHeightVh ?? 85}vh - ${hiddenCount > 0 ? 26 : 0}px)` }}>
+      <div ref={scrollRef} className="flex flex-col gap-1 w-full overflow-y-auto" style={{ height: `calc(${maxHeightVh ?? 85}vh - ${hiddenCount > 0 ? 26 : 0}px)` }}>
         {merged.map((entry) => {
           if (entry.kind === "email") {
             const index = entry.index;
@@ -221,10 +244,12 @@ function ThreadViewer({ onActiveCardMove, maxHeightVh, compact }: Props) {
           const item = entry.item;
           const payload = parse_send_payload(item.payload);
           const isExpanded = expandedItemId === item.id;
+          const attachments: AttachmentPayload[] = payload.attachments ?? [];
 
           return (
             <div
               key={`pending-${item.id}`}
+              data-active={isExpanded ? "true" : undefined}
               onClick={() => {
                 if (isExpanded) return;
                 setExpandedItemId(item.id);
@@ -238,63 +263,39 @@ function ThreadViewer({ onActiveCardMove, maxHeightVh, compact }: Props) {
               `}
             >
               {isExpanded ? (
-                <>
-                <div className="flex-1 min-h-0 overflow-y-auto">
-                  <div className="px-6 pt-5 pb-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Clock size={13} className="text-accent shrink-0" />
-                      <span className="text-xs text-text-secondary uppercase tracking-wider">Scheduled send</span>
-                      <span className="text-xs text-text-secondary ml-auto whitespace-nowrap">{format_date(new Date(item.scheduled_at!).toISOString())}</span>
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    <div className="px-6 pt-5 pb-3">
+                      <h2 className="text-md font-semibold text-text-primary truncate">
+                        {payload.subject || "Scheduled email"}
+                      </h2>
+                      <span className="text-xs text-text-secondary mt-1 inline-block">
+                        Scheduled · {format_date(new Date(item.scheduled_at!).toISOString())}
+                      </span>
                     </div>
-                    <h2 className="text-md font-semibold text-text-primary truncate">
-                      {payload.subject || "Scheduled email"}
-                    </h2>
-                  </div>
-                  <div className="px-6 pt-1 pb-3 space-y-1 text-xs">
-                    <div className="flex overflow-hidden">
-                      <span className="text-text-secondary w-16 shrink-0 text-xs">Sends</span>
-                      <span className="text-text-primary truncate text-xs flex-1 min-w-0">{format_date(new Date(item.scheduled_at!).toISOString())}</span>
-                    </div>
-                    <div className="flex overflow-hidden">
-                      <span className="text-text-secondary w-16 shrink-0 text-xs">To</span>
-                      <span className="text-text-primary truncate text-xs flex-1 min-w-0">{payload.to || "—"}</span>
-                    </div>
-                    {payload.cc && (
-                      <div className="flex overflow-hidden">
-                        <span className="text-text-secondary w-16 shrink-0 text-xs">Cc</span>
-                        <span className="text-text-primary truncate text-xs flex-1 min-w-0">{payload.cc}</span>
+                    <MailMeta mail={item} />
+                    <MailBody html={payload.body_html} text={payload.body_text} email_id={item.id} account_id={item.account_id} />
+                    {attachments.length > 0 && (
+                      <div className="px-6 py-4 border-t border-border-subtle">
+                        <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">
+                          Attachments ({attachments.length})
+                        </p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {attachments.map((att, i) => (
+                            <div
+                              key={att.name || i}
+                              className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-xl border border-gray-200 text-sm min-w-0">
+                              <div className="min-w-0 flex-1 leading-tight">
+                                <p className="text-text-primary font-medium truncate text-[12px]">{att.name}</p>
+                                <p className="text-text-secondary text-[10px]">{format_file_size(att.size)}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
-                  {payload.body_text && (
-                    <div className="px-6 pb-4">
-                      <div className="text-text-tertiary text-sm line-clamp-2 whitespace-pre-line">{payload.body_text}</div>
-                    </div>
-                  )}
                 </div>
-                <div className="shrink-0 px-6 pb-5 pt-1 flex items-center gap-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); sendNow(item); }}
-                      className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg bg-accent text-white hover:opacity-90 transition-opacity cursor-pointer"
-                    >
-                      <Send size={15} /> Send now
-                    </button>
-                    <div className="ml-auto flex items-center gap-2">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); edit(item); }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border-subtle text-xs font-medium text-text-primary hover:bg-black/[0.04] transition-colors cursor-pointer"
-                      >
-                        <Pencil size={12} /> Edit
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); cancel(item); }}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border-subtle text-xs font-medium text-text-primary hover:bg-black/[0.04] transition-colors cursor-pointer"
-                      >
-                        <X size={12} /> Cancel
-                      </button>
-                    </div>
-                  </div>
-                </>
               ) : (
                 <div className="flex items-center px-4 h-8 text-sm text-text-primary shrink-0 select-none">
                   <Clock size={13} className="text-accent mr-2 shrink-0" />

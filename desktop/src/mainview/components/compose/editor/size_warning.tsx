@@ -1,9 +1,9 @@
 import { useAtomValue } from "jotai";
-import { currentMailComposeAtom } from "../../../state";
+import { composeMetaAtom } from "../../../state";
 import { SOFT_LIMIT } from "./constants";
 
 function SizeWarning() {
-  const composeState = useAtomValue(currentMailComposeAtom);
+  const composeState = useAtomValue(composeMetaAtom);
   const totalEstimatedSize = composeState.attachments.reduce((sum, a) => sum + a.size, 0);
   if (totalEstimatedSize <= SOFT_LIMIT) return null;
 

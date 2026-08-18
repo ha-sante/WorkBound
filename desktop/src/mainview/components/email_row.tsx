@@ -1,14 +1,14 @@
 import { memo } from "react";
 import { ChevronRight, icons as lucide_icons } from "lucide-react";
 
-import { parse_email_string } from "./compose/editor/contact_input";
 import { Tooltip } from "./ui/tooltip";
 import { format_time } from "@/shared/datetime";
+import { display_name_for } from "../utils/mail_display_utils";
 
 type LabelRenderFormat = "iconOnly" | "textOnly" | "textAndIcon";
 
 type Props = {
-  email: EmailPreviewWire;
+  row: MailListRow;
   hasDraft?: boolean;
   show_labels?: boolean;
   label_id_to_name?: Record<string, string>;
@@ -19,10 +19,11 @@ type Props = {
   onDelete?: (id: string) => void;
   is_selected?: boolean;
   onHover?: () => void;
+  actions?: React.ReactNode;
 };
 
 function EmailRow({
-  email,
+  row,
   hasDraft,
   show_labels,
   label_id_to_name,
@@ -33,8 +34,21 @@ function EmailRow({
   onDelete,
   is_selected,
   onHover,
+  actions,
 }: Props) {
   const render_format = label_render_format ?? "textOnly";
+
+  const is_email = !("kind" in row);
+  const row_kind = is_email ? "email" : row.kind;
+  const name = is_email ? display_name_for(row) : row.name;
+  const time_label = is_email ? format_time(row.sent_at || row.received_at) : row.time_label;
+  const subject = is_email ? row.subject ?? "" : row.subject;
+  const snippet = is_email ? row.snippet ?? "" : row.snippet;
+  const is_read = is_email ? !!row.is_read : true;
+  const is_starred = is_email ? !!row.is_starred : false;
+  const is_flagged = is_email ? !!row.is_flagged : false;
+  const thread_message_count = is_email ? row.thread_message_count : null;
+  const labels = is_email ? row.labels ?? [] : [];
 
   const normalize_label = (value: string) =>
     value
@@ -75,18 +89,9 @@ function EmailRow({
     ].map((label_id) => label_id.toLowerCase()),
   );
 
-  const name =
-    email.folder === "drafts"
-      ? (() => {
-          const parsed = parse_email_string(email.toAddr || "");
-          if (parsed.length === 0) return "No Recipients";
-          return parsed[0].name || parsed[0].email;
-        })()
-      : email.from_name || email.from_address || "Unknown";
-
   const visible_labels =
-    email.labels && email.labels.length > 0
-      ? email.labels
+    labels && labels.length > 0
+      ? labels
           .filter((id) => {
             const normalized_id = normalize_label(id);
             const should_exclude = excluded_label_ids.has(normalized_id);
@@ -99,13 +104,13 @@ function EmailRow({
 
   return (
     <div
-      className={`group relative flex items-center gap-[6px] px-5 py-2 cursor-pointer w-full transition-colors hover:bg-gray-50 ${is_selected ? "bg-gray-100 hover:bg-gray-100" : ""}`}
-      onClick={() => onClick?.(email.id)}
+      className={`group relative flex min-h-10 items-center gap-[6px] px-5 py-2 cursor-pointer w-full transition-colors hover:bg-gray-50 ${is_selected ? "bg-gray-100 hover:bg-gray-100" : ""}`}
+      onClick={() => onClick?.(row.id)}
       onMouseEnter={() => onHover?.()}
       onContextMenu={(e) => onContextMenu?.(e)}
       data-ctx="email"
     >
-      {email.is_flagged === 1 && (
+      {is_flagged && (
         <Tooltip content="Important" side="top" align="center">
           <ChevronRight
             size={14}
@@ -116,12 +121,12 @@ function EmailRow({
       )}
       <span
         className={`text-sm truncate min-w-0 w-3/12 pr-3 ${
-          email.is_read ? "" : "font-semibold text-slate-900"
+          is_read ? "" : "font-semibold text-slate-900"
         }`}
       >
         {name}
-        {email.thread_message_count != null &&
-          email.thread_message_count > 1 && (
+        {thread_message_count != null &&
+          thread_message_count > 1 && (
             <Tooltip content="Part of a thread" side="top" align="center">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block align-middle ml-1" />
             </Tooltip>
@@ -131,7 +136,7 @@ function EmailRow({
             <span className="w-1.5 h-1.5 rounded-full bg-accent inline-block align-middle ml-1" />
           </Tooltip>
         )}
-        {email.is_starred === 1 && (
+        {is_starred && (
           <Tooltip content="Starred" side="top" align="center">
             <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block align-middle ml-1" />
           </Tooltip>
@@ -140,13 +145,13 @@ function EmailRow({
 
       <div className="text-xs text-text-secondary min-w-0 w-7/12 flex items-center gap-[6px]">
         <span className="min-w-0 flex-1 truncate">
-          {email.subject && (
+          {subject && (
             <span className="font-medium text-text-primary">
-              {email.subject}
+              {subject}
             </span>
           )}
-          {email.subject && email.snippet && <span> </span>}
-          {email.snippet && <span>{email.snippet}</span>}
+          {subject && snippet && <span> </span>}
+          {snippet && <span>{snippet}</span>}
         </span>
 
         {show_labels && visible_labels.length > 0 && (
@@ -200,20 +205,21 @@ function EmailRow({
         )}
       </div>
 
-      <span className="text-xs text-text-secondary shrink-0 ml-auto tabular-nums w-1/12 text-left">
-        {format_time(email.sent_at || email.received_at)}
+      <span className={`text-xs text-text-secondary shrink-0 ml-auto tabular-nums text-left ${row_kind === "email" ? "w-1/12" : "w-[116px] pr-1"}`}>
+        {time_label}
       </span>
       {onDelete && (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onDelete(email.id);
+            onDelete(row.id);
           }}
           className="opacity-0 group-hover:opacity-100 ml-2 text-red-400 hover:text-red-600 transition-opacity text-sm cursor-pointer shrink-0"
           title="Delete draft">
           ×
         </button>
       )}
+      {actions}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { messages } from "@/shared/rpc_messages";
 import { rpc } from "../../rpc";
 import { ConfigRow } from "./config_row";
 import { useConfig } from "@/mainview/hooks/use_config";
+import { ExternalLink } from "../ui/external_link";
 
 type Props = {
   onClose: () => void;
@@ -36,14 +37,13 @@ export function DeveloperConfigModal({ onClose }: Props) {
           <h2 className="text-base font-semibold text-text-primary">Configurations</h2>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-black/[0.04] transition-colors cursor-pointer"
-          >
+            className="p-1 rounded hover:bg-black/[0.04] transition-colors cursor-pointer">
             <X size={18} className="text-text-secondary" />
           </button>
         </div>
         <div className="overflow-y-auto px-5 py-3 pb-5 flex-1">
           <p className="text-xs text-text-secondary mb-3">
-            <span className="font-medium">Self Keys</span> - you can use your own Google OAuth credentials. <a href="https://developers.google.com/identity/protocols/oauth2" target="_blank" rel="noopener noreferrer" className="underline">See official Google setup guide</a>. This can be edited later in settings.
+            <span className="font-medium">Self Keys</span> - you can use your own Google OAuth credentials. <ExternalLink href="https://developers.google.com/identity/protocols/oauth2" className="underline">See official Google setup guide</ExternalLink>. This can be edited later in settings.
           </p>
           <div className="border border-border-subtle rounded divide-y divide-border-subtle">
             {entries.filter((e) => LOGIN_CONFIG_KEYS.has(e.key)).map((entry) => (

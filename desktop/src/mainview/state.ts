@@ -1,4 +1,51 @@
-import { atom } from "jotai";
+import { atom, getDefaultStore } from "jotai";
+import { messages } from "@/shared/rpc_messages";
+import { rpc } from "./rpc";
+export { mail_body_cache_atom } from "./hooks/utils/mail_body_cache";
+
+const DEFAULT_WIDTH = 240;
+const DEFAULT_OPEN = true;
+const WIDTH_KEY = "ui:sidebar_width";
+const OPEN_KEY = "ui:sidebar_open";
+const MIN_WIDTH = 60;
+const MAX_WIDTH = 240;
+
+const store = getDefaultStore();
+const width_base = atom<number>(DEFAULT_WIDTH);
+const open_base = atom<boolean>(DEFAULT_OPEN);
+
+export const sidebarWidthAtom = atom(
+  (get) => get(width_base),
+  (get, set, update: number | ((prev: number) => number)) => {
+    const next = typeof update === "function" ? update(get(width_base)) : update;
+    set(width_base, next);
+    rpc.request(messages.prefs_set, { key: WIDTH_KEY, value: next }).catch(() => {});
+  },
+);
+
+export const sidebarOpenAtom = atom(
+  (get) => get(open_base),
+  (get, set, value: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof value === "function" ? value(get(open_base)) : value;
+    set(open_base, next);
+    rpc.request(messages.prefs_set, { key: OPEN_KEY, value: next }).catch(() => {});
+  },
+);
+
+export async function hydrate_sidebar_state(): Promise<void> {
+  try {
+    const { prefs } = await rpc.request(messages.prefs_get_all);
+    const wv = prefs[WIDTH_KEY];
+    const ov = prefs[OPEN_KEY];
+    if (typeof wv === "number" && Number.isFinite(wv)) {
+      store.set(width_base, Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(wv))));
+    }
+    if (typeof ov === "boolean") {
+      store.set(open_base, ov);
+    }
+  } catch {}
+}
+
 export const folderAtom = atom<string>("inbox");
 export const emailsByFolderAtom = atom<Record<string, any[]>>({});
 
@@ -87,27 +134,21 @@ export function filtered_views_atom_for(account_id: string) {
   }
   return cached;
 }
-
-export type CurrentMailViewState = {
-  email: EmailPreviewWire;
-  fullEmail: EmailRowWire | null;
-} | null;
-
+export type CurrentMailViewState = { email: EmailPreviewWire; fullEmail: EmailRowWire | null; } | null;
 export const currentMailViewAtom = atom<CurrentMailViewState>(null);
-
-export type ThreadViewEmail = {
-  email: EmailPreviewWire;
-  fullEmail: EmailRowWire | null;
-};
+export type ThreadViewEmail = { email: EmailPreviewWire; fullEmail: EmailRowWire | null; };
 
 export type CurrentThreadViewState = {
   thread_id: string;
   emails: ThreadViewEmail[];
   activeIndex: number;
+  scheduled_item_id?: string;
 } | null;
 
 export const currentThreadViewAtom = atom<CurrentThreadViewState>(null);
-export const CLOSED_COMPOSE_STATE: MailComposeState = {
+export const currentScheduledViewAtom = atom<{ item: OutboxItemWire } | null>(null);
+export const activeThreadScheduledItemAtom = atom<OutboxItemWire | null>(null);
+export const CLOSED_COMPOSE_STATE: ComposeMeta = {
   mode: "new",
   email: null,
   fullEmail: null,
@@ -130,28 +171,17 @@ export const CLOSED_COMPOSE_STATE: MailComposeState = {
   outboxId: null,
 };
 
-export const currentMailComposeAtom = atom<MailComposeState>(CLOSED_COMPOSE_STATE);
-export const composeMailBodyAtom = atom<ComposeMailBody>({
-  body_html: "",
-  body_text: "",
-});
+export const composeMetaAtom = atom<ComposeMeta>(CLOSED_COMPOSE_STATE);
+export const composeBodyAtom = atom<ComposeBody>({ body_html: "", body_text: "" });
+export const composePreviousStateAtom = atom<ComposePreviousState | null>(null);
+export const sentToastAtom = atom<SentToastState | null>(null);
 
 export const composeCanUndoAtom = atom(false);
 export const composeCanRedoAtom = atom(false);
-export const composeUndoAtom = atom<{ current: () => void }>({
-  current: () => {},
-});
-export const composeRedoAtom = atom<{ current: () => void }>({
-  current: () => {},
-});
-export const composeDiscardAtom = atom<{ show: boolean; fn: () => void }>({
-  show: false,
-  fn: () => {},
-});
-export const composeSaveAtom = atom<{ status: "off" | "saving" | "saved"; fn: () => void }>({
-  status: "off",
-  fn: () => {},
-});
+export const composeUndoAtom = atom<{ current: () => void }>({ current: () => {} });
+export const composeRedoAtom = atom<{ current: () => void }>({ current: () => {} });
+export const composeDiscardAtom = atom<{ show: boolean; fn: () => void }>({ show: false, fn: () => {} });
+export const composeSaveAtom = atom<{ status: "off" | "saving" | "saved"; fn: () => void }>({ status: "off", fn: () => {} });
 
 export const compose_actions_atom = atom<ComposeActions>({
   send: () => {},
@@ -164,13 +194,19 @@ export const compose_actions_atom = atom<ComposeActions>({
 });
 
 export const command_k_modal_open_atom = atom(false);
+export const command_k_modal_request_atom = atom<
+  | {
+      mode: "reminder";
+      account_id: string;
+      email_id: string;
+      thread_id: string | null;
+      reminder_id?: string;
+    }
+  | { mode: "schedule" }
+  | null
+>(null);
 
-export function create_default_compose_state(
-  mode: DraftMode,
-  email?: EmailPreviewWire | null,
-  fullEmail?: EmailRowWire | null,
-  draft_id?: string | null,
-): MailComposeState {
+export function create_default_compose_state(mode: DraftMode, email?: EmailPreviewWire | null, fullEmail?: EmailRowWire | null, draft_id?: string | null): ComposeMeta {
   const subject = !email?.subject
     ? ""
     : mode === "reply" || mode === "reply_all"

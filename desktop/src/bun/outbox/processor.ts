@@ -1,4 +1,4 @@
-import { pick_queued_outbox, delete_outbox, update_outbox_status } from "../db/outbox";
+import { claim_queued_outbox, delete_outbox, requeue_stale_outbox, update_outbox_retry, update_outbox_status } from "../db/outbox";
 import { logger } from "../utils/logger";
 import { handle_draft_send, handle_send_email, handle_email_delete, handle_label_update, handle_label_batch } from "./mail_ops";
 import { handle_draft_save, handle_draft_delete } from "./draft_ops";
@@ -7,10 +7,14 @@ import { messages } from "../../shared/rpc_messages";
 import { get_rpc } from "./rpc_ref";
 
 let _intervalId: ReturnType<typeof setInterval> | null = null;
+let _processing = false;
 let _lastOnlineCheck = 0;
 let _isOnline = true;
 const ONLINE_CHECK_URL = "https://clients3.google.com/generate_204";
 const ONLINE_CHECK_TTL = 10_000;
+const POLL_INTERVAL_MS = 1_000;
+const LEASE_MS = 5 * 60_000;
+const MAX_ATTEMPTS = 5;
 
 function emit_outbox_changed(item: OutboxItemRow) {
   get_rpc()?.send(messages.outbox_changed, { account_id: item.account_id, thread_id: item.thread_id ?? null });
@@ -71,22 +75,22 @@ export async function process_single_item(item: OutboxItemRow): Promise<void> {
 }
 
 async function process_outbox() {
+  if (_processing) return;
+  _processing = true;
   try {
     if (!(await check_online())) {
       logger.warn("outbox", "offline, skipping outbox processing");
       return;
     }
 
-    const items = pick_queued_outbox();
+    const items = claim_queued_outbox();
     if (items.length === 0) return;
 
     for (const item of items) {
-      if (is_captured_gmail_row(item)) continue;
-      const isSend = item.command === outbox_commands.draft_send || item.command === outbox_commands.send_email;
-      const delayMs = isSend ? 5000 : 0;
-      if (Date.now() - item.created_at < delayMs) continue;
-
-      update_outbox_status(item.id, "sending");
+      if (is_captured_gmail_row(item)) {
+        update_outbox_status(item.id, "queued");
+        continue;
+      }
       try {
         await process_single_item(item);
         delete_outbox(item.id);
@@ -103,9 +107,11 @@ async function process_outbox() {
           || msg.includes("network")
           || msg.includes("connect");
 
-        if (isNetworkError) {
+        if (isNetworkError && item.attempt_count < MAX_ATTEMPTS) {
+          const backoff_ms = Math.min(60_000, 1_000 * (2 ** Math.max(0, item.attempt_count - 1)));
+          const next_retry_at = Date.now() + backoff_ms + Math.floor(Math.random() * 250);
+          update_outbox_retry(item.id, msg, next_retry_at);
           logger.warn("outbox", `${item.command} network error for ${item.id}, will retry`);
-          update_outbox_status(item.id, "queued", msg);
         } else {
           logger.error("outbox", `${item.command} failed ${item.id}:`, err);
           update_outbox_status(item.id, "failed", msg);
@@ -115,13 +121,17 @@ async function process_outbox() {
     }
   } catch (err) {
     logger.error("outbox", "process_outbox error:", err);
+  } finally {
+    _processing = false;
   }
 }
 
 export function start_outbox_processor() {
   if (_intervalId) return;
-  logger.info("outbox", "starting processor (5s interval)");
-  _intervalId = setInterval(process_outbox, 5000);
+  requeue_stale_outbox(LEASE_MS);
+  logger.info("outbox", "starting processor (1s interval)");
+  void process_outbox();
+  _intervalId = setInterval(process_outbox, POLL_INTERVAL_MS);
 }
 
 export function stop_outbox_processor() {
