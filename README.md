@@ -6,7 +6,7 @@
 
 1 to 1 Notion Mail replacement - calm email desktop client - for business or professional.
 - [Watch Walkthrough Video](https://www.youtube.com/watch?v=oKx7v0hIip4)
-
+- [Notion Mail Shutdown Context](https://techcrunch.com/2026/06/25/notion-mail-shuts-down-amid-agent-takeover/)
 
 ## Download & Installation
 
@@ -26,27 +26,7 @@ Background:
 > - The app is currently *not notarized* by Apple, so macOS will warn that it "App Is Damaged" or "cannot check WorkBound for malicious software."  
 > - This does **not** affect app functionality.  
 
-## App Issue Reports & Feedback
-
-You can easily report issues directly in the App
-
-- It will send to my personal email and i will thread reply you directly.
-- You can report public issues here on this github for handling.
-
-
-
-## Code Development:
-
-In other to maintain practically & longevity of project - i make these descisions:
-
-- All github issues are auto closed - fetched & prioritised.
-- All code flows through me atm - until contributers step in.
-- I am the code Testor & QA person to maintain standards.
-
-
-
 ## Features:
-
 1. Complete Offline Support:
    1. Instant email viewing
    2. Instant email actions
@@ -94,6 +74,22 @@ Image & Auth Proxy:
 - Or Insert the google creds as your env overrides & good to go.
 
 
+## App Issue Reports & Feedback
+
+You can easily report issues directly in the App
+
+- It will send to my personal email and i will thread reply you directly.
+- You can report public issues here on this github for handling.
+
+
+## Code Development:
+
+In other to maintain practically & longevity of project - i make these descisions:
+
+- All github issues are auto closed - fetched & prioritised.
+- All code flows through me atm - until contributers step in.
+- I am the code Testor & QA person to maintain standards.
+
 
 ## Limitations, Pricing & Payments
 
@@ -104,8 +100,7 @@ The app is free, however:
 - You can access it via Developer -> Get WorkBounded.
 
 
-
 ## Screenshot
-<p align="start">
-  <img src="docs/screenshot.png" alt="WorkBound app screenshot" width="460">
-</p>
+<div style="flex: 0 1 320px; text-align: right;">
+  <img src="_docs/public/screenshot.png" alt="WorkBound app screenshot" width="320" style="max-width: 100%; height: auto;">
+</div>
